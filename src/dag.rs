@@ -33,7 +33,7 @@ pub struct Edge {
     pub to_port: usize,
 }
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct DagModel {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,

@@ -3,6 +3,7 @@ mod dag;
 mod interaction;
 mod nodes;
 mod renderer;
+mod templates;
 
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, Window};
@@ -20,10 +21,14 @@ fn canvas_size(canvas: &HtmlCanvasElement) -> (f64, f64) {
     (canvas.width() as f64, canvas.height() as f64)
 }
 
+const HISTORY_LIMIT: usize = 50;
+
 /// The main WASM-exported DAG editor.  One instance per canvas element.
 #[wasm_bindgen]
 pub struct DagEditor {
     dag: DagModel,
+    history: Vec<DagModel>,
+    future: Vec<DagModel>,
     camera: Camera,
     interaction: Interaction,
     ctx: CanvasRenderingContext2d,
@@ -50,6 +55,8 @@ impl DagEditor {
 
         Ok(DagEditor {
             dag: DagModel::new(),
+            history: Vec::new(),
+            future: Vec::new(),
             camera: Camera::new(),
             interaction: Interaction::new(),
             ctx,
@@ -70,7 +77,10 @@ impl DagEditor {
     }
 
     pub fn mouse_up(&mut self, sx: f64, sy: f64) {
-        self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
+        // push undo before any structural mutation
+        let dag_before = self.dag.clone();
+        let mutated = self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
+        if mutated { self.push_undo_snapshot(dag_before); }
         self.render();
     }
 
@@ -82,12 +92,64 @@ impl DagEditor {
     pub fn key_down(&mut self, key: &str) -> bool {
         match key {
             "Delete" | "Backspace" => {
+                let snap = self.dag.clone();
                 let mutated = self.interaction.delete_selected(&mut self.dag);
-                if mutated { self.render(); }
+                if mutated { self.push_undo_snapshot(snap); self.render(); }
                 mutated
             }
             _ => false,
         }
+    }
+
+    // ── Undo / Redo ────────────────────────────────────────────────────────────
+
+    pub fn undo(&mut self) -> bool {
+        if let Some(prev) = self.history.pop() {
+            self.future.push(self.dag.clone());
+            self.dag = prev;
+            self.interaction = Interaction::new();
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn redo(&mut self) -> bool {
+        if let Some(next) = self.future.pop() {
+            self.history.push(self.dag.clone());
+            self.dag = next;
+            self.interaction = Interaction::new();
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn can_undo(&self) -> bool { !self.history.is_empty() }
+    pub fn can_redo(&self) -> bool { !self.future.is_empty() }
+
+    // ── Templates ──────────────────────────────────────────────────────────────
+
+    /// Load a named template.  Returns true on success.
+    pub fn load_template(&mut self, name: &str) -> bool {
+        if let Some(t) = templates::get(name) {
+            let snap = self.dag.clone();
+            self.push_undo_snapshot(snap);
+            self.dag = t;
+            self.interaction = Interaction::new();
+            self.camera = Camera::new();
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// JSON array of available template descriptors for the UI dropdown.
+    pub fn template_catalog_json() -> String {
+        templates::catalog_json()
     }
 
     // ── Palette drag ─────────────────────────────────────────────────────
@@ -116,7 +178,9 @@ impl DagEditor {
 
     /// Called when the user releases a palette drag on the canvas.
     pub fn palette_drop(&mut self, sx: f64, sy: f64) {
-        self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
+        let dag_before = self.dag.clone();
+        let mutated = self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
+        if mutated { self.push_undo_snapshot(dag_before); }
         self.render();
     }
 
@@ -220,6 +284,14 @@ impl DagEditor {
         } else {
             false
         }
+    }
+
+    fn push_undo_snapshot(&mut self, snapshot: DagModel) {
+        if self.history.len() >= HISTORY_LIMIT {
+            self.history.remove(0);
+        }
+        self.history.push(snapshot);
+        self.future.clear();
     }
 
     /// Returns the u32 ID of the selected node, or u32::MAX if nothing selected.
