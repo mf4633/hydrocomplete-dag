@@ -1,3 +1,4 @@
+mod chart;
 mod dag;
 mod interaction;
 mod nodes;
@@ -266,6 +267,50 @@ impl DagEditor {
     /// Notify the editor that the canvas has been resized.
     pub fn resize(&self) {
         self.render();
+    }
+
+    // ── Chart rendering ────────────────────────────────────────────────────────
+
+    /// Draw a result chart for node `node_id` onto a separate canvas element.
+    /// Call after `apply_results_json()`. Returns false if the node has no outputs.
+    pub fn render_chart(&self, node_id: u32, chart_canvas_id: &str) -> bool {
+        let id = dag::NodeId(node_id);
+        let node = match self.dag.get_node(id) {
+            Some(n) => n,
+            None => return false,
+        };
+        if node.outputs.is_empty() { return false; }
+
+        let doc = match window().document() {
+            Some(d) => d,
+            None => return false,
+        };
+        let el = match doc.get_element_by_id(chart_canvas_id) {
+            Some(e) => e,
+            None => return false,
+        };
+        let canvas = match el.dyn_into::<web_sys::HtmlCanvasElement>() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let ctx = match canvas.get_context("2d")
+            .ok().flatten()
+            .and_then(|o| o.dyn_into::<web_sys::CanvasRenderingContext2d>().ok())
+        {
+            Some(c) => c,
+            None => return false,
+        };
+
+        let w = canvas.width() as f64;
+        let h = canvas.height() as f64;
+        let kind_str = serde_json::to_value(node.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_default();
+        let outputs_val = serde_json::to_value(&node.outputs).unwrap_or(serde_json::Value::Null);
+
+        chart::render_node_chart(&ctx, w, h, &kind_str, &outputs_val);
+        true
     }
 
     // ── Zoom controls ─────────────────────────────────────────────────────
