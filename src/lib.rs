@@ -29,6 +29,7 @@ pub struct DagEditor {
     dag: DagModel,
     history: Vec<DagModel>,
     future: Vec<DagModel>,
+    clipboard: Option<(String, String)>,  // (kind_json, config_json)
     camera: Camera,
     interaction: Interaction,
     ctx: CanvasRenderingContext2d,
@@ -57,6 +58,7 @@ impl DagEditor {
             dag: DagModel::new(),
             history: Vec::new(),
             future: Vec::new(),
+            clipboard: None,
             camera: Camera::new(),
             interaction: Interaction::new(),
             ctx,
@@ -89,6 +91,7 @@ impl DagEditor {
         self.render();
     }
 
+    /// `key` is the bare key string; `ctrl` true when Ctrl/Meta held.
     pub fn key_down(&mut self, key: &str) -> bool {
         match key {
             "Delete" | "Backspace" => {
@@ -97,6 +100,11 @@ impl DagEditor {
                 if mutated { self.push_undo_snapshot(snap); self.render(); }
                 mutated
             }
+            "c" => { self.copy_selected(); false }   // Ctrl+C handled here (ctrl flag in JS)
+            "v" => { self.paste() }                   // Ctrl+V
+            "d" => { self.copy_selected(); self.paste() }  // Ctrl+D duplicate
+            "a" => { self.zoom_fit(); false }          // Ctrl+A (fit all)
+            "l" => { self.layout(); false }            // Ctrl+L (auto-layout)
             _ => false,
         }
     }
@@ -129,6 +137,143 @@ impl DagEditor {
 
     pub fn can_undo(&self) -> bool { !self.history.is_empty() }
     pub fn can_redo(&self) -> bool { !self.future.is_empty() }
+
+    // ── Layout & view ─────────────────────────────────────────────────────────
+
+    /// Fit all nodes into view with padding.
+    pub fn zoom_fit(&mut self) {
+        use crate::nodes::{NODE_H, NODE_W};
+        if self.dag.nodes.is_empty() { self.camera = Camera::new(); self.render(); return; }
+        let (nx, ny, xx, xy) = self.dag.nodes.iter().fold(
+            (f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+            |(a,b,c,d), n| (a.min(n.x), b.min(n.y), c.max(n.x+NODE_W), d.max(n.y+NODE_H))
+        );
+        let (cw, ch) = canvas_size(&self.canvas);
+        let pad = 60.0;
+        let span_x = (xx - nx).max(1.0);
+        let span_y = (xy - ny).max(1.0);
+        let zoom = ((cw - pad*2.0)/span_x).min((ch - pad*2.0)/span_y).min(1.5).max(0.15);
+        self.camera.zoom  = zoom;
+        self.camera.pan_x = (cw - span_x * zoom) / 2.0 - nx * zoom;
+        self.camera.pan_y = (ch - span_y * zoom) / 2.0 - ny * zoom;
+        self.render();
+    }
+
+    /// Hierarchical auto-layout: left-to-right layering with vertical centering.
+    pub fn layout(&mut self) {
+        use std::collections::HashMap;
+        use crate::dag::NodeId;
+
+        if self.dag.nodes.is_empty() { return; }
+        let snap = self.dag.clone();
+        let topo = self.dag.topological_order();
+
+        // Assign layer = longest path from any source
+        let mut layer: HashMap<u32, usize> = HashMap::new();
+        for &nid in &topo {
+            let max_pred = self.dag.edges.iter()
+                .filter(|e| e.to_node == nid)
+                .filter_map(|e| layer.get(&e.from_node.0))
+                .max()
+                .map(|&l| l + 1)
+                .unwrap_or(0);
+            layer.insert(nid.0, max_pred);
+        }
+
+        let max_layer = layer.values().max().copied().unwrap_or(0);
+        let mut layers: Vec<Vec<NodeId>> = vec![Vec::new(); max_layer + 1];
+        for &nid in &topo {
+            layers[*layer.get(&nid.0).unwrap_or(&0)].push(nid);
+        }
+
+        // Within each layer, sort by average y of predecessors (reduce crossings)
+        let node_center_y: HashMap<u32, f64> = self.dag.nodes.iter()
+            .map(|n| (n.id.0, n.y)).collect();
+
+        const DX: f64 = 220.0;
+        const DY: f64 = 120.0;
+        const PAD_X: f64 = 40.0;
+        const PAD_Y: f64 = 60.0;
+
+        for (l, layer_nodes) in layers.iter_mut().enumerate() {
+            // Sort by avg predecessor y to minimise crossings
+            layer_nodes.sort_by(|&a, &b| {
+                let avg_y = |nid: dag::NodeId| -> f64 {
+                    let preds: Vec<f64> = self.dag.edges.iter()
+                        .filter(|e| e.to_node == nid)
+                        .filter_map(|e| node_center_y.get(&e.from_node.0))
+                        .cloned().collect();
+                    if preds.is_empty() { 0.0 } else { preds.iter().sum::<f64>() / preds.len() as f64 }
+                };
+                avg_y(a).partial_cmp(&avg_y(b)).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            let n = layer_nodes.len() as f64;
+            let total_h = n * DY;
+            for (i, &nid) in layer_nodes.iter().enumerate() {
+                if let Some(node) = self.dag.get_node_mut(nid) {
+                    node.x = PAD_X + l as f64 * DX;
+                    node.y = PAD_Y + i as f64 * DY - total_h / 2.0 + DY / 2.0;
+                    let _ = node;
+                }
+            }
+        }
+
+        self.push_undo_snapshot(snap);
+        self.zoom_fit();
+    }
+
+    // ── Copy / Paste ────────────────────────────────────────────────────────────
+
+    /// Copy the selected node's kind + config into the in-memory clipboard.
+    pub fn copy_selected(&mut self) -> bool {
+        use crate::interaction::Selection;
+        if let Selection::Node(id) = self.interaction.selection {
+            if let Some(node) = self.dag.get_node(id) {
+                let kind_json = serde_json::to_string(&node.kind).unwrap_or_default();
+                let cfg_json  = serde_json::to_string(&node.config).unwrap_or_default();
+                self.clipboard = Some((kind_json, cfg_json));
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Paste the clipboard, creating a new node offset 30,30 from the source.
+    pub fn paste(&mut self) -> bool {
+        let (kind_json, cfg_json) = match &self.clipboard {
+            Some(c) => (c.0.clone(), c.1.clone()),
+            None => return false,
+        };
+        let kind: NodeKind = match serde_json::from_str(&kind_json) {
+            Ok(k) => k,
+            Err(_) => return false,
+        };
+        let config: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_str(&cfg_json).unwrap_or_default();
+
+        // Paste offset from last selected or screen centre
+        let (px, py) = match self.interaction.selection {
+            crate::interaction::Selection::Node(id) => {
+                if let Some(n) = self.dag.get_node(id) { (n.x + 30.0, n.y + 30.0) }
+                else { (200.0, 200.0) }
+            }
+            _ => {
+                let (cw, ch) = canvas_size(&self.canvas);
+                self.camera.to_world(cw / 2.0, ch / 2.0)
+            }
+        };
+
+        let snap = self.dag.clone();
+        let new_id = self.dag.add_node(kind, px, py);
+        if let Some(node) = self.dag.get_node_mut(new_id) {
+            node.config = config;
+        }
+        self.interaction.selection = crate::interaction::Selection::Node(new_id);
+        self.push_undo_snapshot(snap);
+        self.render();
+        true
+    }
 
     // ── Templates ──────────────────────────────────────────────────────────────
 
