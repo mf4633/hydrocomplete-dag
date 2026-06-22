@@ -30,6 +30,7 @@ pub struct DagEditor {
     history: Vec<DagModel>,
     future: Vec<DagModel>,
     clipboard: Option<(String, String)>,  // (kind_json, config_json)
+    snap_grid: Option<f64>,               // None = off, Some(g) = snap to g px
     camera: Camera,
     interaction: Interaction,
     ctx: CanvasRenderingContext2d,
@@ -59,6 +60,7 @@ impl DagEditor {
             history: Vec::new(),
             future: Vec::new(),
             clipboard: None,
+            snap_grid: None,
             camera: Camera::new(),
             interaction: Interaction::new(),
             ctx,
@@ -68,13 +70,13 @@ impl DagEditor {
 
     // ── Input events ─────────────────────────────────────────────────────
 
-    /// Left-button press.  `button`: 0=left, 1=middle, 2=right.
-    pub fn mouse_down(&mut self, sx: f64, sy: f64, button: u16) {
-        self.interaction.mouse_down(sx, sy, button, &self.dag, &self.camera);
+    /// Left-button press.  `button`: 0=left, 1=middle, 2=right.  `shift`: Shift key held.
+    pub fn mouse_down(&mut self, sx: f64, sy: f64, button: u16, shift: bool) {
+        self.interaction.mouse_down(sx, sy, button, shift, &self.dag, &self.camera);
     }
 
     pub fn mouse_move(&mut self, sx: f64, sy: f64) {
-        self.interaction.mouse_move(sx, sy, &mut self.dag, &mut self.camera);
+        self.interaction.mouse_move(sx, sy, &mut self.dag, &mut self.camera, self.snap_grid);
         self.render();
     }
 
@@ -100,11 +102,12 @@ impl DagEditor {
                 if mutated { self.push_undo_snapshot(snap); self.render(); }
                 mutated
             }
-            "c" => { self.copy_selected(); false }   // Ctrl+C handled here (ctrl flag in JS)
-            "v" => { self.paste() }                   // Ctrl+V
-            "d" => { self.copy_selected(); self.paste() }  // Ctrl+D duplicate
-            "a" => { self.zoom_fit(); false }          // Ctrl+A (fit all)
-            "l" => { self.layout(); false }            // Ctrl+L (auto-layout)
+            "c" => { self.copy_selected(); false }
+            "v" => { self.paste() }
+            "d" => { self.copy_selected(); self.paste() }
+            "a" => { self.select_all_nodes(); false }   // Ctrl+A = select all
+            "f" => { self.zoom_fit(); false }            // Ctrl+F = fit (was Ctrl+A)
+            "l" => { self.layout(); false }
             _ => false,
         }
     }
@@ -137,6 +140,38 @@ impl DagEditor {
 
     pub fn can_undo(&self) -> bool { !self.history.is_empty() }
     pub fn can_redo(&self) -> bool { !self.future.is_empty() }
+
+    // ── Selection utilities ────────────────────────────────────────────────────
+
+    pub fn select_all_nodes(&mut self) {
+        self.interaction.select_all(&self.dag);
+        self.render();
+    }
+
+    pub fn selected_node_count(&self) -> usize {
+        self.interaction.selection.node_count()
+    }
+
+    // ── Snap to grid ──────────────────────────────────────────────────────────
+
+    /// Toggle snap-to-grid.  `grid_size` = world-space grid size in pixels (e.g. 20).
+    pub fn toggle_snap(&mut self, grid_size: f64) -> bool {
+        if self.snap_grid.is_some() {
+            self.snap_grid = None;
+            false
+        } else {
+            self.snap_grid = Some(grid_size);
+            true
+        }
+    }
+
+    pub fn snap_enabled(&self) -> bool { self.snap_grid.is_some() }
+
+    // ── Info ──────────────────────────────────────────────────────────────────
+
+    pub fn zoom_percent(&self) -> u32 { (self.camera.zoom * 100.0).round() as u32 }
+    pub fn node_count(&self) -> usize { self.dag.nodes.len() }
+    pub fn edge_count(&self) -> usize { self.dag.edges.len() }
 
     // ── Layout & view ─────────────────────────────────────────────────────────
 
@@ -227,8 +262,7 @@ impl DagEditor {
 
     /// Copy the selected node's kind + config into the in-memory clipboard.
     pub fn copy_selected(&mut self) -> bool {
-        use crate::interaction::Selection;
-        if let Selection::Node(id) = self.interaction.selection {
+        if let Some(id) = self.interaction.selection.primary_node() {
             if let Some(node) = self.dag.get_node(id) {
                 let kind_json = serde_json::to_string(&node.kind).unwrap_or_default();
                 let cfg_json  = serde_json::to_string(&node.config).unwrap_or_default();
@@ -239,7 +273,6 @@ impl DagEditor {
         false
     }
 
-    /// Paste the clipboard, creating a new node offset 30,30 from the source.
     pub fn paste(&mut self) -> bool {
         let (kind_json, cfg_json) = match &self.clipboard {
             Some(c) => (c.0.clone(), c.1.clone()),
@@ -252,16 +285,12 @@ impl DagEditor {
         let config: std::collections::HashMap<String, serde_json::Value> =
             serde_json::from_str(&cfg_json).unwrap_or_default();
 
-        // Paste offset from last selected or screen centre
-        let (px, py) = match self.interaction.selection {
-            crate::interaction::Selection::Node(id) => {
-                if let Some(n) = self.dag.get_node(id) { (n.x + 30.0, n.y + 30.0) }
-                else { (200.0, 200.0) }
-            }
-            _ => {
-                let (cw, ch) = canvas_size(&self.canvas);
-                self.camera.to_world(cw / 2.0, ch / 2.0)
-            }
+        let (px, py) = if let Some(id) = self.interaction.selection.primary_node() {
+            if let Some(n) = self.dag.get_node(id) { (n.x + 30.0, n.y + 30.0) }
+            else { (200.0, 200.0) }
+        } else {
+            let (cw, ch) = canvas_size(&self.canvas);
+            self.camera.to_world(cw / 2.0, ch / 2.0)
         };
 
         let snap = self.dag.clone();
@@ -269,7 +298,7 @@ impl DagEditor {
         if let Some(node) = self.dag.get_node_mut(new_id) {
             node.config = config;
         }
-        self.interaction.selection = crate::interaction::Selection::Node(new_id);
+        self.interaction.selection = crate::interaction::Selection::of_node(new_id);
         self.push_undo_snapshot(snap);
         self.render();
         true
@@ -405,8 +434,7 @@ impl DagEditor {
 
     /// Returns the selected node's JSON (id + kind + config + outputs), or empty string.
     pub fn get_selected_node_json(&self) -> String {
-        use crate::interaction::Selection;
-        if let Selection::Node(id) = self.interaction.selection {
+        if let Some(id) = self.interaction.selection.primary_node() {
             if let Some(node) = self.dag.get_node(id) {
                 return serde_json::to_string(node).unwrap_or_default();
             }
@@ -442,7 +470,7 @@ impl DagEditor {
     /// Returns the u32 ID of the selected node, or u32::MAX if nothing selected.
     pub fn selected_node_id(&self) -> u32 {
         use crate::interaction::Selection;
-        if let Selection::Node(id) = self.interaction.selection { id.0 } else { u32::MAX }
+        self.interaction.selection.primary_node().map(|n| n.0).unwrap_or(u32::MAX)
     }
 
     /// Apply engine result JSON (updated DAG with `outputs` filled in) to the model.

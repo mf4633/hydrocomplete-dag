@@ -59,7 +59,7 @@ pub fn render(
 
     // Draw edges (behind nodes)
     for edge in &dag.edges {
-        let selected = matches!(selection, Selection::Edge(id) if *id == edge.id);
+        let selected = selection.edge == Some(edge.id);
         if let (Some(fn_), Some(tn)) = (dag.get_node(edge.from_node), dag.get_node(edge.to_node)) {
             let (x1, y1) = abs_port_pos(fn_.kind, fn_.x, fn_.y, edge.from_port, true);
             let (x2, y2) = abs_port_pos(tn.kind, tn.x, tn.y, edge.to_port, false);
@@ -77,12 +77,33 @@ pub fn render(
 
     // Draw nodes (on top of edges)
     for node in &dag.nodes {
-        let selected = matches!(selection, Selection::Node(id) if *id == node.id);
-        let dragging = matches!(state, InteractionState::DraggingNode { node_id, .. } if *node_id == node.id);
+        let selected = selection.has_node(node.id);
+        let dragging = matches!(state, InteractionState::DraggingNodes { .. }) && selected;
         draw_node(ctx, dag, node.id, selected, dragging);
     }
 
-    // Draw ghost node when dragging from palette
+    // Rubber-band selection rect
+    if let InteractionState::RubberBand { start_wx, start_wy, cur_wx, cur_wy } = state {
+        let (swx, swy, cwx, cwy) = (*start_wx, *start_wy, *cur_wx, *cur_wy);
+        let w = (cwx - swx).abs();
+        let h = (cwy - swy).abs();
+        if w > 2.0 || h > 2.0 {
+            let rx = swx.min(cwx);
+            let ry = swy.min(cwy);
+            ctx.set_fill_style(&JsValue::from_str("rgba(88,166,255,0.08)"));
+            ctx.fill_rect(rx, ry, w, h);
+            let dash = js_sys::Array::new();
+            dash.push(&JsValue::from_f64(5.0));
+            dash.push(&JsValue::from_f64(3.0));
+            let _ = ctx.set_line_dash(&dash);
+            ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(rx, ry, w, h);
+            let _ = ctx.set_line_dash(&js_sys::Array::new());
+        }
+    }
+
+    // Ghost node when dragging from palette
     if let InteractionState::DraggingFromPalette { kind, world_x, world_y } = state {
         draw_ghost_node(ctx, *kind, *world_x, *world_y);
     }
