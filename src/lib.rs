@@ -341,6 +341,90 @@ impl DagEditor {
         self.render();
     }
 
+    // ── Minimap ────────────────────────────────────────────────────────────────
+
+    /// Render a scaled-down overview of the DAG onto a separate minimap canvas.
+    /// Draws node rects, edges, and a viewport indicator box.
+    pub fn render_minimap(&self, minimap_id: &str, main_canvas_w: f64, main_canvas_h: f64) -> bool {
+        use crate::nodes::{NODE_H, NODE_W};
+
+        let doc = match window().document() { Some(d) => d, None => return false };
+        let el  = match doc.get_element_by_id(minimap_id) { Some(e) => e, None => return false };
+        let mc  = match el.dyn_into::<web_sys::HtmlCanvasElement>() { Ok(c) => c, Err(_) => return false };
+        let ctx = match mc.get_context("2d").ok().flatten()
+            .and_then(|o| o.dyn_into::<web_sys::CanvasRenderingContext2d>().ok())
+        { Some(c) => c, None => return false };
+
+        let mw = mc.width()  as f64;
+        let mh = mc.height() as f64;
+
+        // World bounds
+        if self.dag.nodes.is_empty() { return true; }
+        let (wnx, wny, wxx, wxy) = self.dag.nodes.iter().fold(
+            (f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+            |(nx, ny, xx, xy), n| (nx.min(n.x), ny.min(n.y), xx.max(n.x + NODE_W), xy.max(n.y + NODE_H))
+        );
+        let pad = 20.0;
+        let wspan_x = (wxx - wnx + pad * 2.0).max(1.0);
+        let wspan_y = (wxy - wny + pad * 2.0).max(1.0);
+        let scale = (mw / wspan_x).min(mh / wspan_y);
+
+        let wx = |x: f64| (x - wnx + pad) * scale;
+        let wy = |y: f64| (y - wny + pad) * scale;
+
+        // Background
+        ctx.set_fill_style(&JsValue::from_str("#161b22"));
+        ctx.fill_rect(0.0, 0.0, mw, mh);
+
+        // Edges
+        ctx.set_stroke_style(&JsValue::from_str("#30363d"));
+        ctx.set_line_width(0.8);
+        for edge in &self.dag.edges {
+            if let (Some(fn_), Some(tn)) = (self.dag.get_node(edge.from_node), self.dag.get_node(edge.to_node)) {
+                let x1 = wx(fn_.x + NODE_W);
+                let y1 = wy(fn_.y + NODE_H / 2.0);
+                let x2 = wx(tn.x);
+                let y2 = wy(tn.y + NODE_H / 2.0);
+                ctx.begin_path();
+                ctx.move_to(x1, y1);
+                let dx = ((x2 - x1).abs() * 0.5).max(20.0 * scale);
+                ctx.bezier_curve_to(x1 + dx, y1, x2 - dx, y2, x2, y2);
+                ctx.stroke();
+            }
+        }
+
+        // Nodes
+        for node in &self.dag.nodes {
+            let def = node.kind.def();
+            let fill = def.category.header_fill();
+            let nx = wx(node.x);
+            let ny = wy(node.y);
+            let nw = NODE_W * scale;
+            let nh = NODE_H * scale;
+            ctx.set_fill_style(&JsValue::from_str(fill));
+            ctx.fill_rect(nx, ny, nw, nh);
+        }
+
+        // Viewport indicator (what the main canvas currently shows)
+        let vp_wx = (-self.camera.pan_x) / self.camera.zoom;
+        let vp_wy = (-self.camera.pan_y) / self.camera.zoom;
+        let vp_ww = main_canvas_w / self.camera.zoom;
+        let vp_wh = main_canvas_h / self.camera.zoom;
+
+        let rx = wx(vp_wx);
+        let ry = wy(vp_wy);
+        let rw = vp_ww * scale;
+        let rh = vp_wh * scale;
+
+        ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+        ctx.set_line_width(1.5);
+        ctx.stroke_rect(rx, ry, rw, rh);
+        ctx.set_fill_style(&JsValue::from_str("rgba(88,166,255,0.08)"));
+        ctx.fill_rect(rx, ry, rw, rh);
+
+        true
+    }
+
     // ── Chart rendering ────────────────────────────────────────────────────────
 
     /// Draw a result chart for node `node_id` onto a separate canvas element.
