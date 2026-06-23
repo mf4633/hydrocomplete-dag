@@ -1,0 +1,15 @@
+{
+  "name": "hydrocomplete-dag",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "hydrocomplete_dag_bg.wasm",
+    "hydrocomplete_dag.js",
+    "hydrocomplete_dag.d.ts"
+  ],
+  "main": "hydrocomplete_dag.js",
+  "types": "hydrocomplete_dag.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
