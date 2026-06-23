@@ -173,6 +173,65 @@ impl DagEditor {
     pub fn node_count(&self) -> usize { self.dag.nodes.len() }
     pub fn edge_count(&self) -> usize { self.dag.edges.len() }
 
+    // ── Node label editing ─────────────────────────────────────────────────────
+
+    /// Set a custom display label on a node (empty string clears it).
+    pub fn set_node_label(&mut self, node_id: u32, label: &str) -> bool {
+        if let Some(node) = self.dag.get_node_mut(dag::NodeId(node_id)) {
+            node.label = if label.trim().is_empty() { None } else { Some(label.trim().to_string()) };
+            self.render();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Hit-test screen position → node id (u32::MAX if none).
+    pub fn node_at_screen(&self, sx: f64, sy: f64) -> u32 {
+        let (wx, wy) = self.camera.to_world(sx, sy);
+        renderer::hit_node(&self.dag, wx, wy).map(|n| n.0).unwrap_or(u32::MAX)
+    }
+
+    /// Returns {x,y,w,h} in screen pixels for the node bounding box, or "{}" if not found.
+    pub fn node_screen_rect(&self, node_id: u32) -> String {
+        use crate::nodes::{NODE_H, NODE_W};
+        if let Some(node) = self.dag.get_node(dag::NodeId(node_id)) {
+            let sx = node.x * self.camera.zoom + self.camera.pan_x;
+            let sy = node.y * self.camera.zoom + self.camera.pan_y;
+            serde_json::json!({
+                "x": sx, "y": sy,
+                "w": NODE_W * self.camera.zoom,
+                "h": NODE_H * self.camera.zoom,
+                "label": node.label.clone().unwrap_or_default(),
+            }).to_string()
+        } else {
+            "{}".to_string()
+        }
+    }
+
+    // ── Zoom-to-selected ───────────────────────────────────────────────────────
+
+    /// Fit view to selected nodes only; falls back to zoom_fit if nothing selected.
+    pub fn zoom_to_selected(&mut self) {
+        use crate::nodes::{NODE_H, NODE_W};
+        if self.interaction.selection.nodes.is_empty() { self.zoom_fit(); return; }
+        let ids: std::collections::HashSet<u32> =
+            self.interaction.selection.nodes.iter().map(|n| n.0).collect();
+        let (nx, ny, xx, xy) = self.dag.nodes.iter()
+            .filter(|n| ids.contains(&n.id.0))
+            .fold((f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+                  |(a,b,c,d), n| (a.min(n.x), b.min(n.y), c.max(n.x+NODE_W), d.max(n.y+NODE_H)));
+        let (cw, ch) = canvas_size(&self.canvas);
+        let pad = 80.0;
+        let zoom = ((cw-pad*2.0)/(xx-nx).max(1.0))
+            .min((ch-pad*2.0)/(xy-ny).max(1.0))
+            .min(2.0).max(0.2);
+        self.camera.zoom  = zoom;
+        self.camera.pan_x = (cw - (xx-nx)*zoom)/2.0 - nx*zoom;
+        self.camera.pan_y = (ch - (xy-ny)*zoom)/2.0 - ny*zoom;
+        self.render();
+    }
+
     // ── Layout & view ─────────────────────────────────────────────────────────
 
     /// Fit all nodes into view with padding.
