@@ -261,7 +261,12 @@ impl DagEditor {
     // ── Copy / Paste ────────────────────────────────────────────────────────────
 
     /// Copy the selected node's kind + config into the in-memory clipboard.
+    /// Copy selected node(s) + internal edges into clipboard.
     pub fn copy_selected(&mut self) -> bool {
+        let n = self.interaction.selection.node_count();
+        if n == 0 { return false; }
+        if n > 1 { return self.copy_group(); }
+        // Single node
         if let Some(id) = self.interaction.selection.primary_node() {
             if let Some(node) = self.dag.get_node(id) {
                 let kind_json = serde_json::to_string(&node.kind).unwrap_or_default();
@@ -273,7 +278,27 @@ impl DagEditor {
         false
     }
 
+    /// Copy multiple selected nodes + their internal edges as a sub-graph.
+    fn copy_group(&mut self) -> bool {
+        use std::collections::HashSet;
+        let ids: HashSet<u32> = self.interaction.selection.nodes.iter().map(|n| n.0).collect();
+        let nodes: Vec<_> = self.dag.nodes.iter().filter(|n| ids.contains(&n.id.0)).collect();
+        let edges: Vec<_> = self.dag.edges.iter()
+            .filter(|e| ids.contains(&e.from_node.0) && ids.contains(&e.to_node.0)).collect();
+        let sub = serde_json::json!({ "nodes": nodes, "edges": edges });
+        self.clipboard = Some(("__group__".to_string(), sub.to_string()));
+        true
+    }
+
     pub fn paste(&mut self) -> bool {
+        match self.clipboard.as_ref().map(|c| c.0.as_str()) {
+            Some("__group__") => self.paste_group(),
+            Some(_)           => self.paste_single(),
+            None              => false,
+        }
+    }
+
+    fn paste_single(&mut self) -> bool {
         let (kind_json, cfg_json) = match &self.clipboard {
             Some(c) => (c.0.clone(), c.1.clone()),
             None => return false,
@@ -284,7 +309,6 @@ impl DagEditor {
         };
         let config: std::collections::HashMap<String, serde_json::Value> =
             serde_json::from_str(&cfg_json).unwrap_or_default();
-
         let (px, py) = if let Some(id) = self.interaction.selection.primary_node() {
             if let Some(n) = self.dag.get_node(id) { (n.x + 30.0, n.y + 30.0) }
             else { (200.0, 200.0) }
@@ -292,13 +316,61 @@ impl DagEditor {
             let (cw, ch) = canvas_size(&self.canvas);
             self.camera.to_world(cw / 2.0, ch / 2.0)
         };
-
         let snap = self.dag.clone();
         let new_id = self.dag.add_node(kind, px, py);
-        if let Some(node) = self.dag.get_node_mut(new_id) {
-            node.config = config;
-        }
+        if let Some(node) = self.dag.get_node_mut(new_id) { node.config = config; }
         self.interaction.selection = crate::interaction::Selection::of_node(new_id);
+        self.push_undo_snapshot(snap);
+        self.render();
+        true
+    }
+
+    fn paste_group(&mut self) -> bool {
+        use std::collections::HashMap;
+        let data = match &self.clipboard {
+            Some(c) => c.1.clone(),
+            None => return false,
+        };
+        let sub: serde_json::Value = match serde_json::from_str(&data) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        let snap = self.dag.clone();
+        let mut id_map: HashMap<u32, dag::NodeId> = HashMap::new();
+        let mut new_ids = Vec::new();
+
+        if let Some(nodes) = sub["nodes"].as_array() {
+            for nv in nodes {
+                let old_id = nv["id"]["0"].as_u64().unwrap_or(0) as u32;
+                let kind: NodeKind = serde_json::from_value(nv["kind"].clone())
+                    .unwrap_or(NodeKind::Outfall);
+                let x = nv["x"].as_f64().unwrap_or(0.0) + 40.0;
+                let y = nv["y"].as_f64().unwrap_or(0.0) + 40.0;
+                let config: std::collections::HashMap<String, serde_json::Value> =
+                    serde_json::from_value(nv["config"].clone()).unwrap_or_default();
+                let label: Option<String> = nv["label"].as_str().map(|s| s.to_string());
+                let new_id = self.dag.add_node(kind, x, y);
+                if let Some(node) = self.dag.get_node_mut(new_id) {
+                    node.config = config;
+                    node.label = label;
+                }
+                id_map.insert(old_id, new_id);
+                new_ids.push(new_id);
+            }
+        }
+        if let Some(edges) = sub["edges"].as_array() {
+            for ev in edges {
+                let fo = ev["from_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let fp = ev["from_port"].as_u64().unwrap_or(0) as usize;
+                let to = ev["to_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let tp = ev["to_port"].as_u64().unwrap_or(0) as usize;
+                if let (Some(&fn_), Some(&tn)) = (id_map.get(&fo), id_map.get(&to)) {
+                    self.dag.add_edge(fn_, fp, tn, tp);
+                }
+            }
+        }
+        self.interaction.selection.nodes = new_ids;
+        self.interaction.selection.edge = None;
         self.push_undo_snapshot(snap);
         self.render();
         true

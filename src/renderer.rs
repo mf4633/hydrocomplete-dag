@@ -75,11 +75,28 @@ pub fn render(
         }
     }
 
+    // When drawing an edge, highlight all input ports as drop targets
+    let highlighting_ports = matches!(state, InteractionState::DrawingEdge { .. });
+
     // Draw nodes (on top of edges)
     for node in &dag.nodes {
         let selected = selection.has_node(node.id);
         let dragging = matches!(state, InteractionState::DraggingNodes { .. }) && selected;
         draw_node(ctx, dag, node.id, selected, dragging);
+
+        if highlighting_ports {
+            let def = node.kind.def();
+            for i in 0..def.inputs.len() {
+                let (px, py) = abs_port_pos(node.kind, node.x, node.y, i, false);
+                ctx.begin_path();
+                let _ = ctx.arc(px, py, PORT_R + 4.0, 0.0, 2.0 * std::f64::consts::PI);
+                ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+                ctx.set_line_width(2.0);
+                let dash = js_sys::Array::new();
+                let _ = ctx.set_line_dash(&dash);
+                ctx.stroke();
+            }
+        }
     }
 
     // Rubber-band selection rect
