@@ -93,7 +93,11 @@ impl DagEditor {
         self.render();
     }
 
-    /// `key` is the bare key string; `ctrl` true when Ctrl/Meta held.
+    /// Handle a raw key press. Only `Delete`/`Backspace` (remove the current
+    /// selection) are handled here; every modifier-based shortcut (copy, paste,
+    /// select-all, layout, fit, …) is dispatched by the host page directly to
+    /// the dedicated method so the Ctrl/Meta state is actually honored.
+    /// Returns true if the DAG was mutated.
     pub fn key_down(&mut self, key: &str) -> bool {
         match key {
             "Delete" | "Backspace" => {
@@ -102,12 +106,6 @@ impl DagEditor {
                 if mutated { self.push_undo_snapshot(snap); self.render(); }
                 mutated
             }
-            "c" => { self.copy_selected(); false }
-            "v" => { self.paste() }
-            "d" => { self.copy_selected(); self.paste() }
-            "a" => { self.select_all_nodes(); false }   // Ctrl+A = select all
-            "f" => { self.zoom_fit(); false }            // Ctrl+F = fit (was Ctrl+A)
-            "l" => { self.layout(); false }
             _ => false,
         }
     }
@@ -219,7 +217,7 @@ impl DagEditor {
             self.interaction.selection.nodes.iter().map(|n| n.0).collect();
         let (nx, ny, xx, xy) = self.dag.nodes.iter()
             .filter(|n| ids.contains(&n.id.0))
-            .fold((f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+            .fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN),
                   |(a,b,c,d), n| (a.min(n.x), b.min(n.y), c.max(n.x+NODE_W), d.max(n.y+NODE_H)));
         let (cw, ch) = canvas_size(&self.canvas);
         let pad = 80.0;
@@ -239,7 +237,7 @@ impl DagEditor {
         use crate::nodes::{NODE_H, NODE_W};
         if self.dag.nodes.is_empty() { self.camera = Camera::new(); self.render(); return; }
         let (nx, ny, xx, xy) = self.dag.nodes.iter().fold(
-            (f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+            (f64::MAX, f64::MAX, f64::MIN, f64::MIN),
             |(a,b,c,d), n| (a.min(n.x), b.min(n.y), c.max(n.x+NODE_W), d.max(n.y+NODE_H))
         );
         let (cw, ch) = canvas_size(&self.canvas);
@@ -280,9 +278,26 @@ impl DagEditor {
             layers[*layer.get(&nid.0).unwrap_or(&0)].push(nid);
         }
 
-        // Within each layer, sort by average y of predecessors (reduce crossings)
+        // Within each layer, sort by average y of predecessors (reduce crossings).
+        // Precompute the average predecessor y for every node in a single pass
+        // over the edges so the sort comparator is an O(1) lookup rather than a
+        // full edge scan per comparison.
         let node_center_y: HashMap<u32, f64> = self.dag.nodes.iter()
             .map(|n| (n.id.0, n.y)).collect();
+        let mut pred_sum: HashMap<u32, (f64, usize)> = HashMap::new();
+        for e in &self.dag.edges {
+            if let Some(&py) = node_center_y.get(&e.from_node.0) {
+                let entry = pred_sum.entry(e.to_node.0).or_insert((0.0, 0));
+                entry.0 += py;
+                entry.1 += 1;
+            }
+        }
+        let avg_pred_y = |nid: dag::NodeId| -> f64 {
+            match pred_sum.get(&nid.0) {
+                Some(&(sum, count)) if count > 0 => sum / count as f64,
+                _ => 0.0,
+            }
+        };
 
         const DX: f64 = 220.0;
         const DY: f64 = 120.0;
@@ -292,14 +307,7 @@ impl DagEditor {
         for (l, layer_nodes) in layers.iter_mut().enumerate() {
             // Sort by avg predecessor y to minimise crossings
             layer_nodes.sort_by(|&a, &b| {
-                let avg_y = |nid: dag::NodeId| -> f64 {
-                    let preds: Vec<f64> = self.dag.edges.iter()
-                        .filter(|e| e.to_node == nid)
-                        .filter_map(|e| node_center_y.get(&e.from_node.0))
-                        .cloned().collect();
-                    if preds.is_empty() { 0.0 } else { preds.iter().sum::<f64>() / preds.len() as f64 }
-                };
-                avg_y(a).partial_cmp(&avg_y(b)).unwrap_or(std::cmp::Ordering::Equal)
+                avg_pred_y(a).partial_cmp(&avg_pred_y(b)).unwrap_or(std::cmp::Ordering::Equal)
             });
 
             let n = layer_nodes.len() as f64;
@@ -600,7 +608,6 @@ impl DagEditor {
 
     /// Returns the u32 ID of the selected node, or u32::MAX if nothing selected.
     pub fn selected_node_id(&self) -> u32 {
-        use crate::interaction::Selection;
         self.interaction.selection.primary_node().map(|n| n.0).unwrap_or(u32::MAX)
     }
 
@@ -665,7 +672,7 @@ impl DagEditor {
         // World bounds
         if self.dag.nodes.is_empty() { return true; }
         let (wnx, wny, wxx, wxy) = self.dag.nodes.iter().fold(
-            (f64::MAX, f64::MAX, f64::MIN_POSITIVE, f64::MIN_POSITIVE),
+            (f64::MAX, f64::MAX, f64::MIN, f64::MIN),
             |(nx, ny, xx, xy), n| (nx.min(n.x), ny.min(n.y), xx.max(n.x + NODE_W), xy.max(n.y + NODE_H))
         );
         let pad = 20.0;
@@ -677,11 +684,11 @@ impl DagEditor {
         let wy = |y: f64| (y - wny + pad) * scale;
 
         // Background
-        ctx.set_fill_style(&JsValue::from_str("#161b22"));
+        ctx.set_fill_style_str("#161b22");
         ctx.fill_rect(0.0, 0.0, mw, mh);
 
         // Edges
-        ctx.set_stroke_style(&JsValue::from_str("#30363d"));
+        ctx.set_stroke_style_str("#30363d");
         ctx.set_line_width(0.8);
         for edge in &self.dag.edges {
             if let (Some(fn_), Some(tn)) = (self.dag.get_node(edge.from_node), self.dag.get_node(edge.to_node)) {
@@ -705,7 +712,7 @@ impl DagEditor {
             let ny = wy(node.y);
             let nw = NODE_W * scale;
             let nh = NODE_H * scale;
-            ctx.set_fill_style(&JsValue::from_str(fill));
+            ctx.set_fill_style_str(fill);
             ctx.fill_rect(nx, ny, nw, nh);
         }
 
@@ -720,10 +727,10 @@ impl DagEditor {
         let rw = vp_ww * scale;
         let rh = vp_wh * scale;
 
-        ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+        ctx.set_stroke_style_str("#58a6ff");
         ctx.set_line_width(1.5);
         ctx.stroke_rect(rx, ry, rw, rh);
-        ctx.set_fill_style(&JsValue::from_str("rgba(88,166,255,0.08)"));
+        ctx.set_fill_style_str("rgba(88,166,255,0.08)");
         ctx.fill_rect(rx, ry, rw, rh);
 
         true
@@ -778,11 +785,13 @@ impl DagEditor {
     pub fn zoom_in(&mut self) {
         let (w, h) = canvas_size(&self.canvas);
         self.interaction.wheel(-1.0, w / 2.0, h / 2.0, &mut self.camera);
+        self.render();
     }
 
     pub fn zoom_out(&mut self) {
         let (w, h) = canvas_size(&self.canvas);
         self.interaction.wheel(1.0, w / 2.0, h / 2.0, &mut self.camera);
+        self.render();
     }
 
     pub fn zoom_reset(&mut self) {

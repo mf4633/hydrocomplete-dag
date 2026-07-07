@@ -33,7 +33,11 @@ export class DagEditor {
      */
     get_selected_node_json(): string;
     /**
-     * `key` is the bare key string; `ctrl` true when Ctrl/Meta held.
+     * Handle a raw key press. Only `Delete`/`Backspace` (remove the current
+     * selection) are handled here; every modifier-based shortcut (copy, paste,
+     * select-all, layout, fit, …) is dispatched by the host page directly to
+     * the dedicated method so the Ctrl/Meta state is actually honored.
+     * Returns true if the DAG was mutated.
      */
     key_down(key: string): boolean;
     /**

@@ -15,7 +15,6 @@ impl Selection {
     pub fn of_node(id: NodeId) -> Self { Selection { nodes: vec![id], edge: None } }
     pub fn of_edge(id: EdgeId) -> Self { Selection { nodes: Vec::new(), edge: Some(id) } }
     pub fn has_node(&self, id: NodeId) -> bool { self.nodes.contains(&id) }
-    pub fn is_empty(&self) -> bool { self.nodes.is_empty() && self.edge.is_none() }
     pub fn primary_node(&self) -> Option<NodeId> { self.nodes.first().copied() }
     pub fn node_count(&self) -> usize { self.nodes.len() }
 

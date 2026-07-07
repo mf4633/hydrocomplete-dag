@@ -2,7 +2,6 @@
 /// Draws line, bar, and gauge charts directly onto a 2D canvas
 /// from data stored in node outputs after a DAG run.
 use std::f64::consts::PI;
-use wasm_bindgen::JsValue;
 use web_sys::CanvasRenderingContext2d as Ctx;
 
 struct Pad { l: f64, r: f64, t: f64, b: f64 }
@@ -18,7 +17,6 @@ const COL_PEAK: &str   = "#f78166";
 const COL_TSS: &str    = "#e67e22";
 const COL_TN: &str     = "#27ae60";
 const COL_TP: &str     = "#2980b9";
-const COL_BAR: [&str; 6] = ["#1f6feb","#238636","#da3633","#e3b341","#8957e5","#3fb950"];
 
 // ── Public entry points ───────────────────────────────────────────────────────
 
@@ -82,14 +80,14 @@ fn draw_hydrograph(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         for (i, &v) in inflow.iter().enumerate() { ctx.line_to(mx(i), my(v)); }
         ctx.line_to(mx(inflow.len() - 1), my(0.0));
         ctx.close_path();
-        ctx.set_fill_style(&JsValue::from_str("rgba(100,120,180,0.12)"));
+        ctx.set_fill_style_str("rgba(100,120,180,0.12)");
         ctx.fill();
 
         ctx.begin_path();
         for (i, &v) in inflow.iter().enumerate() {
             if i == 0 { ctx.move_to(mx(0), my(v)); } else { ctx.line_to(mx(i), my(v)); }
         }
-        ctx.set_stroke_style(&JsValue::from_str("#6475b4"));
+        ctx.set_stroke_style_str("#6475b4");
         ctx.set_line_width(1.5);
         let _ = ctx.set_line_dash(&js_sys::Array::new());
         ctx.stroke();
@@ -98,7 +96,7 @@ fn draw_hydrograph(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     // Outflow line
     if outflow.len() > 1 {
         ctx.begin_path();
-        ctx.set_fill_style(&JsValue::from_str(COL_FILL));
+        ctx.set_fill_style_str(COL_FILL);
         ctx.move_to(mx(0), my(0.0));
         for (i, &v) in outflow.iter().enumerate() { ctx.line_to(mx(i), my(v)); }
         ctx.line_to(mx(outflow.len() - 1), my(0.0));
@@ -109,7 +107,7 @@ fn draw_hydrograph(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         for (i, &v) in outflow.iter().enumerate() {
             if i == 0 { ctx.move_to(mx(0), my(v)); } else { ctx.line_to(mx(i), my(v)); }
         }
-        ctx.set_stroke_style(&JsValue::from_str(COL_LINE));
+        ctx.set_stroke_style_str(COL_LINE);
         ctx.set_line_width(2.0);
         ctx.stroke();
     }
@@ -121,7 +119,7 @@ fn draw_hydrograph(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         let ppx = mx(pi); let ppy = my(*pq);
         ctx.begin_path();
         let _ = ctx.arc(ppx, ppy, 4.0, 0.0, 2.0 * PI);
-        ctx.set_fill_style(&JsValue::from_str(COL_PEAK));
+        ctx.set_fill_style_str(COL_PEAK);
         ctx.fill();
         label(ctx, &fmt_val(*pq), ppx + 6.0, ppy - 6.0, COL_PEAK, 9.0, "left");
     }
@@ -138,7 +136,6 @@ fn draw_monthly_bars(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
 
     let rain   = float_array(outs, "monthly_rain_in");
     let runoff = float_array(outs, "monthly_runoff_ac_in");
-    let tss    = float_array(outs, "monthly_tss_lbs");
 
     if rain.is_empty() {
         // Scalar fallback
@@ -167,12 +164,12 @@ fn draw_monthly_bars(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         let cx = pad.l + (i as f64 + 0.5) / n as f64 * pw;
         let bar_h = (rain[i] / max_r) * ph;
         let bx = cx - bar_w;
-        ctx.set_fill_style(&JsValue::from_str("#1f6feb99"));
+        ctx.set_fill_style_str("#1f6feb99");
         ctx.fill_rect(bx, pad.t + ph - bar_h, bar_w, bar_h);
 
         if !runoff.is_empty() && i < runoff.len() {
             let rh = (runoff[i] / max_r) * ph;
-            ctx.set_fill_style(&JsValue::from_str("#238636cc"));
+            ctx.set_fill_style_str("#238636cc");
             ctx.fill_rect(cx, pad.t + ph - rh, bar_w, rh);
         }
 
@@ -220,11 +217,11 @@ fn draw_pollutant_bars(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         let gx = pad.l + (i as f64 + 0.5) * group_w;
         // Influent
         let ih = (influent[i] / max_v) * ph;
-        ctx.set_fill_style(&JsValue::from_str(&format!("{}aa", colors[i])));
+        ctx.set_fill_style_str(&format!("{}aa", colors[i]));
         ctx.fill_rect(gx - bar_w - 1.0, pad.t + ph - ih, bar_w, ih);
         // Effluent
         let eh = (effluent[i] / max_v) * ph;
-        ctx.set_fill_style(&JsValue::from_str(colors[i]));
+        ctx.set_fill_style_str(colors[i]);
         ctx.fill_rect(gx + 1.0, pad.t + ph - eh, bar_w, eh);
         // Removal %
         let rem_pct = if influent[i] > 0.0 { (1.0 - effluent[i] / influent[i]) * 100.0 } else { 0.0 };
@@ -269,7 +266,7 @@ fn draw_erosion_gauge(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
         let _ = ctx.arc(cx, cy, r, arc_start, arc_start + seg);
         let _ = ctx.arc_with_anticlockwise(cx, cy, r * 0.6, arc_start + seg, arc_start, true);
         ctx.close_path();
-        ctx.set_fill_style(&JsValue::from_str(col));
+        ctx.set_fill_style_str(col);
         ctx.fill();
         arc_start += seg;
         prev_cap = cap.min(max_disp);
@@ -283,12 +280,12 @@ fn draw_erosion_gauge(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     ctx.begin_path();
     ctx.move_to(cx, cy);
     ctx.line_to(nx, ny);
-    ctx.set_stroke_style(&JsValue::from_str("#fff"));
+    ctx.set_stroke_style_str("#fff");
     ctx.set_line_width(2.5);
     ctx.stroke();
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, 5.0, 0.0, 2.0 * PI);
-    ctx.set_fill_style(&JsValue::from_str("#fff"));
+    ctx.set_fill_style_str("#fff");
     ctx.fill();
 
     // Risk label
@@ -315,7 +312,7 @@ fn draw_capacity_gauge(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     // Background circle
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, r, 0.0, 2.0 * PI);
-    ctx.set_stroke_style(&JsValue::from_str(COL_GRID));
+    ctx.set_stroke_style_str(COL_GRID);
     ctx.set_line_width(12.0);
     ctx.stroke();
 
@@ -324,7 +321,7 @@ fn draw_capacity_gauge(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     let end_angle = -PI / 2.0 + ratio.min(1.0) * 2.0 * PI;
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, r, -PI / 2.0, end_angle);
-    ctx.set_stroke_style(&JsValue::from_str(fill_col));
+    ctx.set_stroke_style_str(fill_col);
     ctx.set_line_width(12.0);
     ctx.stroke();
 
@@ -389,12 +386,12 @@ fn draw_kv_panel(ctx: &Ctx, w: f64, h: f64, heading: &str, rows: &[(&str, &str, 
 
 fn clear(ctx: &Ctx, w: f64, h: f64) {
     let _ = ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
-    ctx.set_fill_style(&JsValue::from_str(COL_BG));
+    ctx.set_fill_style_str(COL_BG);
     ctx.fill_rect(0.0, 0.0, w, h);
 }
 
 fn draw_grid(ctx: &Ctx, x: f64, y: f64, w: f64, h: f64, ny: usize, _nx: usize) {
-    ctx.set_stroke_style(&JsValue::from_str(COL_GRID));
+    ctx.set_stroke_style_str(COL_GRID);
     ctx.set_line_width(0.5);
     for i in 0..=ny {
         let gy = y + h * (1.0 - i as f64 / ny as f64);
@@ -426,7 +423,7 @@ fn axis_bottom(ctx: &Ctx, x: f64, y: f64, w: f64, n: usize, unit: &str) {
 fn legend(ctx: &Ctx, x: f64, y: f64, items: &[(&str, &str)]) {
     for (i, (col, name)) in items.iter().enumerate() {
         let lx = x; let ly = y + i as f64 * 14.0;
-        ctx.set_fill_style(&JsValue::from_str(col));
+        ctx.set_fill_style_str(col);
         ctx.fill_rect(lx, ly, 10.0, 9.0);
         label(ctx, name, lx + 13.0, ly + 4.0, COL_AXIS, 9.0, "left");
     }
@@ -437,7 +434,7 @@ fn title(ctx: &Ctx, text: &str, x: f64, y: f64) {
 }
 
 fn label(ctx: &Ctx, text: &str, x: f64, y: f64, color: &str, size: f64, align: &str) {
-    ctx.set_fill_style(&JsValue::from_str(color));
+    ctx.set_fill_style_str(color);
     ctx.set_font(&format!("{}px 'Segoe UI', Arial, sans-serif", size));
     ctx.set_text_align(align);
     ctx.set_text_baseline("middle");

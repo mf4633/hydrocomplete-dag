@@ -119,10 +119,6 @@ impl DagModel {
         self.edges.iter().filter(move |e| e.from_node == node)
     }
 
-    pub fn edges_to(&self, node: NodeId) -> impl Iterator<Item = &Edge> {
-        self.edges.iter().filter(move |e| e.to_node == node)
-    }
-
     /// Returns nodes in topological order (Kahn's algorithm).
     pub fn topological_order(&self) -> Vec<NodeId> {
         let mut in_degree: HashMap<NodeId, usize> =
@@ -282,7 +278,7 @@ mod tests {
         dag.add_edge(a, 0, b, 0).unwrap();
         dag.add_edge(a, 0, c, 0).unwrap();
         dag.add_edge(b, 0, d, 0).unwrap();
-        dag.add_edge(c, 0, d, 0).is_none(); // port 0 already occupied on d
+        assert!(dag.add_edge(c, 0, d, 0).is_none()); // port 0 already occupied on d
         // partial: a < b, a < c; b < d or c < d
         let order = dag.topological_order();
         let pos = |id| order.iter().position(|&x| x == id).unwrap();
