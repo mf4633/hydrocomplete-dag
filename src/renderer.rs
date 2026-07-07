@@ -48,7 +48,7 @@ pub fn render(
 ) {
     // Reset transform to screen space for full clear
     let _ = ctx.set_transform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0);
-    ctx.set_fill_style(&JsValue::from_str("#f8f9fa"));
+    ctx.set_fill_style_str("#f8f9fa");
     ctx.fill_rect(0.0, 0.0, canvas_w, canvas_h);
 
     // Apply camera transform for world-space drawing
@@ -90,7 +90,7 @@ pub fn render(
                 let (px, py) = abs_port_pos(node.kind, node.x, node.y, i, false);
                 ctx.begin_path();
                 let _ = ctx.arc(px, py, PORT_R + 4.0, 0.0, 2.0 * std::f64::consts::PI);
-                ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+                ctx.set_stroke_style_str("#58a6ff");
                 ctx.set_line_width(2.0);
                 let dash = js_sys::Array::new();
                 let _ = ctx.set_line_dash(&dash);
@@ -107,13 +107,13 @@ pub fn render(
         if w > 2.0 || h > 2.0 {
             let rx = swx.min(cwx);
             let ry = swy.min(cwy);
-            ctx.set_fill_style(&JsValue::from_str("rgba(88,166,255,0.08)"));
+            ctx.set_fill_style_str("rgba(88,166,255,0.08)");
             ctx.fill_rect(rx, ry, w, h);
             let dash = js_sys::Array::new();
             dash.push(&JsValue::from_f64(5.0));
             dash.push(&JsValue::from_f64(3.0));
             let _ = ctx.set_line_dash(&dash);
-            ctx.set_stroke_style(&JsValue::from_str("#58a6ff"));
+            ctx.set_stroke_style_str("#58a6ff");
             ctx.set_line_width(1.0);
             ctx.stroke_rect(rx, ry, w, h);
             let _ = ctx.set_line_dash(&js_sys::Array::new());
@@ -133,7 +133,7 @@ pub fn render(
 
 fn draw_grid(ctx: &Ctx, camera: &Camera, canvas_w: f64, canvas_h: f64) {
     ctx.set_global_alpha(0.35);
-    ctx.set_fill_style(&JsValue::from_str("#9e9e9e"));
+    ctx.set_fill_style_str("#9e9e9e");
 
     let world_left = (-camera.pan_x) / camera.zoom;
     let world_top = (-camera.pan_y) / camera.zoom;
@@ -167,17 +167,17 @@ fn draw_edge(ctx: &Ctx, x1: f64, y1: f64, x2: f64, y2: f64, selected: bool, prev
         dash.push(&JsValue::from_f64(6.0));
         dash.push(&JsValue::from_f64(4.0));
         let _ = ctx.set_line_dash(&dash);
-        ctx.set_stroke_style(&JsValue::from_str("#90a4ae"));
+        ctx.set_stroke_style_str("#90a4ae");
         ctx.set_line_width(1.5);
     } else if selected {
         let dash = js_sys::Array::new();
         let _ = ctx.set_line_dash(&dash);
-        ctx.set_stroke_style(&JsValue::from_str("#ff6f00"));
+        ctx.set_stroke_style_str("#ff6f00");
         ctx.set_line_width(2.5);
     } else {
         let dash = js_sys::Array::new();
         let _ = ctx.set_line_dash(&dash);
-        ctx.set_stroke_style(&JsValue::from_str("#455a64"));
+        ctx.set_stroke_style_str("#455a64");
         ctx.set_line_width(1.8);
     }
     ctx.stroke();
@@ -203,7 +203,7 @@ fn draw_arrowhead(ctx: &Ctx, tip_x: f64, tip_y: f64, angle: f64, selected: bool)
     ctx.line_to(base_x + ARROW_HALF * perp.cos(), base_y + ARROW_HALF * perp.sin());
     ctx.line_to(base_x - ARROW_HALF * perp.cos(), base_y - ARROW_HALF * perp.sin());
     ctx.close_path();
-    ctx.set_fill_style(&JsValue::from_str(color));
+    ctx.set_fill_style_str(color);
     ctx.fill();
 }
 
@@ -228,8 +228,8 @@ pub fn draw_node(ctx: &Ctx, dag: &DagModel, node_id: NodeId, selected: bool, dra
     ctx.set_shadow_offset_y(2.0);
 
     // Body
-    ctx.set_fill_style(&JsValue::from_str(def.category.body_fill()));
-    ctx.set_stroke_style(&JsValue::from_str(if selected { "#ff6f00" } else { def.category.border() }));
+    ctx.set_fill_style_str(def.category.body_fill());
+    ctx.set_stroke_style_str(if selected { "#ff6f00" } else { def.category.border() });
     ctx.set_line_width(if selected { 2.5 } else { 1.5 });
     rounded_rect_path(ctx, x, y, NODE_W, NODE_H, CORNER_R);
     ctx.fill();
@@ -241,12 +241,12 @@ pub fn draw_node(ctx: &Ctx, dag: &DagModel, node_id: NodeId, selected: bool, dra
     ctx.set_shadow_offset_y(0.0);
 
     // Header
-    ctx.set_fill_style(&JsValue::from_str(def.category.header_fill()));
+    ctx.set_fill_style_str(def.category.header_fill());
     rounded_rect_top_path(ctx, x, y, NODE_W, HEADER_H, CORNER_R);
     ctx.fill();
 
     // Header label
-    ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+    ctx.set_fill_style_str("#ffffff");
     ctx.set_font("bold 12px 'Segoe UI', Arial, sans-serif");
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
@@ -257,20 +257,20 @@ pub fn draw_node(ctx: &Ctx, dag: &DagModel, node_id: NodeId, selected: bool, dra
     let body_cy = y + HEADER_H + (NODE_H - HEADER_H) / 2.0;
 
     if let Some(err) = node.outputs.get("error") {
-        ctx.set_fill_style(&JsValue::from_str("#c62828"));
+        ctx.set_fill_style_str("#c62828");
         ctx.set_font("bold 9px 'Segoe UI', Arial, sans-serif");
         let msg = err.as_str().unwrap_or("error").chars().take(22).collect::<String>();
         let _ = ctx.fill_text(&format!("⚠ {}", msg), body_cx, body_cy);
     } else if let Some(v0) = node.outputs.get("0") {
         // Show primary output value
-        ctx.set_fill_style(&JsValue::from_str("#1b5e20"));
+        ctx.set_fill_style_str("#1b5e20");
         ctx.set_font("bold 10px 'Segoe UI', Arial, sans-serif");
         let val_str = fmt_output_val(v0);
         let port_label = if !def.outputs.is_empty() { def.outputs[0].label } else { "→" };
         let _ = ctx.fill_text(&format!("{}: {}", port_label, val_str), body_cx, body_cy - 5.0);
 
         if let Some(v1) = node.outputs.get("1") {
-            ctx.set_fill_style(&JsValue::from_str("#2e7d32"));
+            ctx.set_fill_style_str("#2e7d32");
             ctx.set_font("9px 'Segoe UI', Arial, sans-serif");
             let label1 = if def.outputs.len() > 1 { def.outputs[1].label } else { "" };
             if !label1.is_empty() {
@@ -279,7 +279,7 @@ pub fn draw_node(ctx: &Ctx, dag: &DagModel, node_id: NodeId, selected: bool, dra
         }
     } else {
         // No outputs yet — show description
-        ctx.set_fill_style(&JsValue::from_str("#546e7a"));
+        ctx.set_fill_style_str("#546e7a");
         ctx.set_font("10px 'Segoe UI', Arial, sans-serif");
         let _ = ctx.fill_text(def.description, body_cx, body_cy);
     }
@@ -303,14 +303,14 @@ fn draw_port(ctx: &Ctx, cx: f64, cy: f64, is_output: bool, label: &str) {
     // Port circle
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, PORT_R, 0.0, 2.0 * PI);
-    ctx.set_fill_style(&JsValue::from_str("#ffffff"));
-    ctx.set_stroke_style(&JsValue::from_str("#455a64"));
+    ctx.set_fill_style_str("#ffffff");
+    ctx.set_stroke_style_str("#455a64");
     ctx.set_line_width(1.5);
     ctx.fill();
     ctx.stroke();
 
     // Port label
-    ctx.set_fill_style(&JsValue::from_str("#37474f"));
+    ctx.set_fill_style_str("#37474f");
     ctx.set_font("9px 'Segoe UI', Arial, sans-serif");
     ctx.set_text_baseline("middle");
     if is_output {
@@ -329,18 +329,18 @@ fn draw_ghost_node(ctx: &Ctx, kind: NodeKind, wx: f64, wy: f64) {
 
     ctx.set_global_alpha(0.55);
 
-    ctx.set_fill_style(&JsValue::from_str(def.category.body_fill()));
-    ctx.set_stroke_style(&JsValue::from_str(def.category.border()));
+    ctx.set_fill_style_str(def.category.body_fill());
+    ctx.set_stroke_style_str(def.category.border());
     ctx.set_line_width(2.0);
     rounded_rect_path(ctx, x, y, NODE_W, NODE_H, CORNER_R);
     ctx.fill();
     ctx.stroke();
 
-    ctx.set_fill_style(&JsValue::from_str(def.category.header_fill()));
+    ctx.set_fill_style_str(def.category.header_fill());
     rounded_rect_top_path(ctx, x, y, NODE_W, HEADER_H, CORNER_R);
     ctx.fill();
 
-    ctx.set_fill_style(&JsValue::from_str("#ffffff"));
+    ctx.set_fill_style_str("#ffffff");
     ctx.set_font("bold 12px 'Segoe UI', Arial, sans-serif");
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");

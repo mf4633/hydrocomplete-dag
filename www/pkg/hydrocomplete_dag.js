@@ -102,7 +102,11 @@ export class DagEditor {
         }
     }
     /**
-     * `key` is the bare key string; `ctrl` true when Ctrl/Meta held.
+     * Handle a raw key press. Only `Delete`/`Backspace` (remove the current
+     * selection) are handled here; every modifier-based shortcut (copy, paste,
+     * select-all, layout, fit, …) is dispatched by the host page directly to
+     * the dedicated method so the Ctrl/Meta state is actually honored.
+     * Returns true if the DAG was mutated.
      * @param {string} key
      * @returns {boolean}
      */
@@ -546,8 +550,8 @@ function __wbg_get_imports() {
         __wbg_setTransform_49a6e126738858db: function() { return handleError(function (arg0, arg1, arg2, arg3, arg4, arg5, arg6) {
             arg0.setTransform(arg1, arg2, arg3, arg4, arg5, arg6);
         }, arguments); },
-        __wbg_set_fillStyle_01152e00b5737643: function(arg0, arg1) {
-            arg0.fillStyle = arg1;
+        __wbg_set_fillStyle_35471aa9a10a6686: function(arg0, arg1, arg2) {
+            arg0.fillStyle = getStringFromWasm0(arg1, arg2);
         },
         __wbg_set_font_e2bce6175ef42bc3: function(arg0, arg1, arg2) {
             arg0.font = getStringFromWasm0(arg1, arg2);
@@ -570,8 +574,8 @@ function __wbg_get_imports() {
         __wbg_set_shadowOffsetY_545ef89bd50db5bd: function(arg0, arg1) {
             arg0.shadowOffsetY = arg1;
         },
-        __wbg_set_strokeStyle_77f54c809146a711: function(arg0, arg1) {
-            arg0.strokeStyle = arg1;
+        __wbg_set_strokeStyle_d494db5851ff0dbd: function(arg0, arg1, arg2) {
+            arg0.strokeStyle = getStringFromWasm0(arg1, arg2);
         },
         __wbg_set_textAlign_8cc28de727b5df6f: function(arg0, arg1, arg2) {
             arg0.textAlign = getStringFromWasm0(arg1, arg2);
