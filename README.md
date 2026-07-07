@@ -24,3 +24,7 @@ npx --yes serve www -l 4173
 ## Tests
 
 Playwright specs under `tests/` (DAG editor UI). HydroComplete OCS integration tests live in `opencad-hydrocomplete-plugin/tests/frontend/`.
+
+## Support
+
+If HydroComplete's DAG editor is useful to you, please consider [sponsoring the project](https://github.com/sponsors/mf4633). Your support helps keep it maintained.
