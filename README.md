@@ -15,15 +15,38 @@ rustup target add wasm32-unknown-unknown
 wasm-pack build --target web --out-dir www/pkg --release
 ```
 
-Serve locally:
+`--release` runs `wasm-opt` automatically when [binaryen](https://github.com/WebAssembly/binaryen)
+is available. `www/pkg/` is committed, so re-run this and commit the result
+whenever the Rust in `src/` changes, otherwise the browser bundle and the
+E2E tests will run against stale code.
+
+Serve locally (uses `serve.js`, which sends the correct `application/wasm`
+MIME type):
 
 ```bash
-npx --yes serve www -l 4173
+npm run serve        # http://127.0.0.1:7777
 ```
 
 ## Tests
 
-Playwright specs under `tests/` (DAG editor UI). HydroComplete OCS integration tests live in `opencad-hydrocomplete-plugin/tests/frontend/`.
+Rust unit tests:
+
+```bash
+cargo test
+```
+
+Playwright E2E specs under `tests/` exercise the DAG editor UI against the
+committed `www/pkg/` bundle:
+
+```bash
+npm ci
+npx playwright install chromium
+npm test
+```
+
+Both suites run in CI (`.github/workflows/ci.yml`) on every push and pull
+request. HydroComplete OCS integration tests live in
+`opencad-hydrocomplete-plugin/tests/frontend/`.
 
 ## Support
 
