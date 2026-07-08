@@ -22,8 +22,9 @@ http.createServer((req, res) => {
   const file  = url === '/' ? '/index.html' : url;
   const full  = path.join(root, file);
 
-  // Security: stay inside root
-  if (!full.startsWith(root)) { res.writeHead(403); res.end(); return; }
+  // Security: stay inside root (guard the path boundary, not just the string
+  // prefix — otherwise a sibling dir like `${root}-secret` would slip through).
+  if (full !== root && !full.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
 
   fs.readFile(full, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }
