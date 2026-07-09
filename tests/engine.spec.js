@@ -299,3 +299,97 @@ test.describe('Topological execution order', () => {
     }
   });
 });
+
+// ── Corrected physics — numeric vectors ────────────────────────────────────────
+// Runs single-node DAGs through the standalone engine and asserts the corrected
+// hydrology/hydraulics results (see www/index.html HYD kernel).
+
+async function runNode(page, kind, config) {
+  return page.evaluate(({ kind, config }) => {
+    const dag = { nodes: [{ id: 0, kind, x: 0, y: 0, config, outputs: {} }], edges: [] };
+    const res = JSON.parse(window.__runStandaloneEngine(JSON.stringify(dag), JSON.stringify([0])));
+    return res.nodes[0].outputs;
+  }, { kind, config });
+}
+
+test.describe('Standalone engine — corrected physics', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await waitForEditor(page);
+  });
+
+  test('detention pond routes with realistic peak + hydrograph arrays', async ({ page }) => {
+    const o = await runNode(page, 'detention_pond', {
+      area_acres: 5, curve_number: 80, rainfall_in: 4.2, tc_min: 20,
+      bottom_area_sf: 5000, side_slope: 3, max_depth_ft: 6,
+      orifice_dia_in: 6, orifice_invert_ft: 0,
+    });
+    // Peak out is limited by the 6" orifice — a few cfs, not thousands.
+    expect(o['0']).toBeGreaterThan(0);
+    expect(o['0']).toBeLessThan(10);
+    expect(o.attenuation_pct).toBeGreaterThan(50);
+    expect(Array.isArray(o.hydro_inflow_cfs)).toBe(true);
+    expect(o.hydro_outflow_cfs.length).toBeGreaterThan(5);
+    expect(o.peak_storage_cf).toBeGreaterThan(0);
+  });
+
+  test('detention peak out scales up with a larger orifice', async ({ page }) => {
+    const base = { area_acres: 5, curve_number: 80, rainfall_in: 4.2, tc_min: 20,
+      bottom_area_sf: 5000, side_slope: 3, max_depth_ft: 6, orifice_invert_ft: 0 };
+    const small = await runNode(page, 'detention_pond', { ...base, orifice_dia_in: 6 });
+    const big   = await runNode(page, 'detention_pond', { ...base, orifice_dia_in: 18 });
+    expect(big['0']).toBeGreaterThan(small['0']); // orifice size now matters
+  });
+
+  test('unit hydrograph peak uses sq-mi conversion (not 640x)', async ({ page }) => {
+    const o = await runNode(page, 'unit_hydrograph', { area_acres: 5, tc_min: 20 });
+    // 484*(5/640)*1.0/(0.667*0.333) ≈ 17 cfs, not ~10,000.
+    expect(o['0']).toBeGreaterThan(5);
+    expect(o['0']).toBeLessThan(50);
+  });
+
+  test('RUSLE responds to region and slope', async ({ page }) => {
+    const flat  = await runNode(page, 'rusle_erosion', { region: 'charlotte-nc', slope_length_ft: 100, slope_pct: 1, area_acres: 1 });
+    const steep = await runNode(page, 'rusle_erosion', { region: 'charlotte-nc', slope_length_ft: 100, slope_pct: 15, area_acres: 1 });
+    expect(steep['0']).toBeGreaterThan(flat['0']); // steeper slope => more erosion
+    expect(flat['0']).toBeGreaterThan(0);
+  });
+
+  test('loss methods differ by method and are non-zero', async ({ page }) => {
+    const base = { rainfall_in: 3.5, curve_number: 75, duration_hr: 24, hsg: 'B' };
+    const cn = await runNode(page, 'loss_method', { ...base, method: 'curve_number' });
+    const ga = await runNode(page, 'loss_method', { ...base, method: 'green_ampt' });
+    const ho = await runNode(page, 'loss_method', { ...base, method: 'horton' });
+    expect(cn['0']).toBeGreaterThan(0);
+    expect(ga['0']).toBeGreaterThan(0);
+    expect(ho['0']).toBeGreaterThan(0);
+    // Green-Ampt (recovering capacity) yields less runoff than CN here.
+    expect(ga['0']).toBeLessThan(cn['0']);
+  });
+
+  test('manning pipe reports a partial-flow depth on port 1', async ({ page }) => {
+    const o = await runNode(page, 'manning_pipe', { diameter_ft: 1.5, slope: 0.005, manning_n: 0.013, design_q_cfs: 5 });
+    expect(o['1']).toBeGreaterThan(0);
+    expect(o['1']).toBeLessThan(1.5); // below the crown for a sub-full flow
+  });
+
+  test('treatment train produces an effluent load on port 0', async ({ page }) => {
+    const o = await runNode(page, 'treatment_train', { area_acres: 5, runoff_in: 0.5, bmp_chain: 'bioretention,sand-filter' });
+    expect(o['0']).toBeGreaterThan(0);          // port 0 "Effluent loads" now populated
+    expect(o['1']).toBeGreaterThan(50);         // series removal efficiency (%)
+  });
+
+  test('sediment basin consumes yield and reports trapped mass', async ({ page }) => {
+    const o = await runNode(page, 'sediment_basin', { design_q_cfs: 5, area_acres: 5, sed_yield_tons_ac_yr: 10 });
+    expect(o['0']).toBeGreaterThan(0);          // trap efficiency %
+    expect(o.trapped_tons_yr).toBeGreaterThan(0);
+  });
+
+  test('continuous sim responds to location and outputs monthly arrays', async ({ page }) => {
+    const dry = await runNode(page, 'continuous_sim', { location: 'phoenix-az', area_acres: 5, curve_number: 75, years: 3 });
+    const wet = await runNode(page, 'continuous_sim', { location: 'miami-fl', area_acres: 5, curve_number: 75, years: 3 });
+    expect(wet['0']).toBeGreaterThan(dry['0']); // wetter city => more runoff
+    expect(Array.isArray(wet.monthly_rain_in)).toBe(true);
+    expect(wet.monthly_runoff_ac_in.length).toBe(12);
+  });
+});

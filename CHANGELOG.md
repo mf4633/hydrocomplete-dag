@@ -5,6 +5,30 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed — standalone engine hydrology correctness
+A shared `HYD` kernel (US-customary, mirrors the authoritative C# `DagExecutor`)
+replaces the ad-hoc per-node math. All results now respond to their inputs:
+- **SCS peak flow** (`detention_pond`, `pond_chain`, `unit_hydrograph`) — the `484`
+  coefficient now uses **area in square miles** with `Tp ≈ 0.667·Tc`, fixing a
+  ~640× overestimate (a 5-ac site went from ~4,000 cfs to ~38 cfs).
+- **Detention pond** — real **Modified-Puls** routing (frustum stage-storage,
+  orifice + emergency-weir stage-outflow, storage-indication routing) with
+  inflow/outflow hydrograph arrays for the chart. Peak outflow now responds to
+  orifice size, invert, and pond geometry.
+- **RUSLE** — `R` from a regional isoerodent map and `LS` from slope length &
+  steepness (McCool), so `region`/`slope_length_ft`/`slope_pct` finally matter.
+- **Loss Method** — Green-Ampt, Horton, initial+constant, and constant-rate are
+  implemented (driven by an SCS Type II design hyetograph) alongside curve number;
+  `method` and `hsg` now change the result.
+- **Continuous Sim** — regional annual rainfall + monthly CN accounting; honors
+  `location` and `years`; outputs monthly arrays and corrected `ac-in/yr` units.
+- **Sediment Basin** — trap efficiency from overflow-rate settling; consumes the
+  soil-loss input / `sed_yield` to report trapped mass.
+- **Output-port gaps filled** — Manning Pipe now reports flow depth (port 1);
+  Treatment BMP/Train report effluent load (port 0); BMP Sizing sizes from the
+  treated volume (WQV ÷ ponding depth) instead of a flat 5%.
+- Added Playwright numeric test vectors covering the corrected physics.
+
 ### Fixed
 - **Config panel targeted the wrong node.** `NodeId` serializes as a bare integer
   (serde newtype), so reading `node.id['0']` in the UI was `undefined` and every
