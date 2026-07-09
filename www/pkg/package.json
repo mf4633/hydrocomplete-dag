@@ -1,15 +1,29 @@
 {
   "name": "hydrocomplete-dag",
   "type": "module",
+  "description": "WASM model builder for HydroComplete — a visual hydrology/hydraulics DAG editor for stormwater analysis.",
   "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mf4633/hydrocomplete-dag"
+  },
   "files": [
     "hydrocomplete_dag_bg.wasm",
     "hydrocomplete_dag.js",
     "hydrocomplete_dag.d.ts"
   ],
   "main": "hydrocomplete_dag.js",
+  "homepage": "https://hydrocomplete.com",
   "types": "hydrocomplete_dag.d.ts",
   "sideEffects": [
     "./snippets/*"
+  ],
+  "keywords": [
+    "wasm",
+    "hydrology",
+    "hydraulics",
+    "stormwater",
+    "civil-engineering"
   ]
 }

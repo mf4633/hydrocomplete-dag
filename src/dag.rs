@@ -320,6 +320,33 @@ mod tests {
     }
 
     #[test]
+    fn node_id_serializes_as_bare_integer() {
+        // NodeId is a serde newtype struct, so it serializes to a bare JSON
+        // number — NOT `{"0": n}`. The paste_group id remapper and the JS
+        // `normId()` helper both depend on this; lock it down.
+        assert_eq!(serde_json::to_value(NodeId(7)).unwrap(), serde_json::json!(7));
+        assert!(serde_json::to_value(NodeId(7)).unwrap()["0"].is_null());
+
+        let mut dag = mk();
+        let a = dag.add_node(NodeKind::Catchment, 0.0, 0.0);
+        let v = serde_json::to_value(dag.get_node(a).unwrap()).unwrap();
+        assert_eq!(v["id"], serde_json::json!(0));
+        assert!(v["id"]["0"].is_null());
+    }
+
+    #[test]
+    fn edge_endpoints_serialize_as_bare_integers() {
+        let mut dag = mk();
+        let a = dag.add_node(NodeKind::Catchment, 0.0, 0.0);
+        let b = dag.add_node(NodeKind::RationalMethod, 100.0, 0.0);
+        dag.add_edge(a, 0, b, 0).unwrap();
+        let v = serde_json::to_value(&dag.edges[0]).unwrap();
+        assert_eq!(v["from_node"], serde_json::json!(0));
+        assert_eq!(v["to_node"], serde_json::json!(1));
+        assert!(v["from_node"]["0"].is_null());
+    }
+
+    #[test]
     fn config_fields_populated_for_all_kinds() {
         // Every node kind except Outfall must have at least one config field.
         for &kind in NodeKind::all() {

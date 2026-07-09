@@ -113,6 +113,9 @@ fn num(key: &'static str, label: &'static str, default: f64, unit: &'static str)
 fn sel(key: &'static str, label: &'static str, default_str: &'static str, opts: &'static [(&'static str, &'static str)]) -> ConfigFieldDef {
     ConfigFieldDef { key, label, field_type: "select", default_num: 0.0, default_str, unit: "", options: opts }
 }
+fn txt(key: &'static str, label: &'static str, default_str: &'static str, unit: &'static str) -> ConfigFieldDef {
+    ConfigFieldDef { key, label, field_type: "text", default_num: 0.0, default_str, unit, options: &[] }
+}
 
 // ── Option lists ─────────────────────────────────────────────────────────────
 
@@ -335,6 +338,7 @@ impl NodeKind {
                     num("slope",           "Bed slope",   0.01,  "ft/ft"),
                     num("manning_n",       "Manning n",   0.035, ""),
                     num("tailwater_ft",    "Tailwater",   0.0,   "ft"),
+                    num("length_ft",       "Reach length",500.0, "ft"),
                 ],
             },
             NodeKind::DetentionPond => NodeDef {
@@ -368,6 +372,8 @@ impl NodeKind {
                     num("area_acres",    "Drainage area", 5.0,  "ac"),
                     num("curve_number",  "Curve Number",  80.0, ""),
                     num("rainfall_in",   "Design storm",  4.2,  "in"),
+                    num("tc_min",        "Tc",            20.0, "min"),
+                    num("n_ponds",       "Ponds in series", 2.0, ""),
                 ],
             },
             // ── Water Quality ─────────────────────────────────────────────
@@ -425,7 +431,8 @@ impl NodeKind {
                     num("area_acres", "Area",     5.0, "ac"),
                     sel("land_use",   "Land Use", "residential-medium", LAND_USE_OPTS),
                     num("runoff_in",  "Runoff",   0.5, "in"),
-                    // bmp_chain is a special comma-separated field handled in executor
+                    // Comma-separated BMP keys routed in series by the executor.
+                    txt("bmp_chain",  "BMP chain (comma-sep)", "bioretention,sand-filter", ""),
                 ],
             },
             NodeKind::SedimentBasin => NodeDef {

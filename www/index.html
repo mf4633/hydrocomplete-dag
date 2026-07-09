@@ -337,7 +337,23 @@ html, body { height: 100%; background: #0d1117; font-family: 'Segoe UI', Arial, 
 <script type="module">
 import init, { DagEditor } from './pkg/hydrocomplete_dag.js';
 
-await init();
+try {
+  const s = document.getElementById('status');
+  if (s) s.textContent = 'Loading engine…';
+  await init();
+} catch (err) {
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;'
+    + 'flex-direction:column;gap:8px;background:#0d1117;color:#f85149;font:14px "Segoe UI",Arial,sans-serif;padding:24px;text-align:center';
+  const h = document.createElement('div');
+  h.textContent = 'Failed to load the HydroComplete engine (WASM).';
+  const d = document.createElement('div');
+  d.style.cssText = 'color:#8b949e;font-size:12px';
+  d.textContent = 'Reload the page, or try a modern browser with WebAssembly enabled. ' + String(err);
+  banner.append(h, d);
+  document.body.append(banner);
+  throw err;
+}
 
 // ── Canvas setup ──────────────────────────────────────────────────────────
 const canvas  = document.getElementById('dag-canvas');
@@ -365,6 +381,16 @@ resizeCanvas();
 const PALETTE = JSON.parse(DagEditor.palette_json());
 const NODE_SCHEMA = Object.fromEntries(PALETTE.map(n => [n.kind, n]));
 
+// NodeId serializes as a bare integer from Rust/WASM (serde newtype) but as
+// {"0": n} from the C# host. Normalize both shapes everywhere an id is read.
+const normId = (v) => (typeof v === 'number' ? v : (v?.[0] ?? v?.['0'] ?? 0));
+
+// Escape untrusted strings (node labels, config keys/values, loaded-JSON
+// outputs) before interpolating into innerHTML / report/SVG markup.
+const escapeHtml = (s) => String(s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 const sidebar = document.getElementById('palette');
 let currentCat = null;
 for (const item of PALETTE) {
@@ -389,7 +415,7 @@ let configNodeId = null;
 function showConfig(nodeJson) {
   if (!nodeJson) { hideConfig(); return; }
   const node = JSON.parse(nodeJson);
-  configNodeId = node.id['0'];
+  configNodeId = normId(node.id);
   const schema = NODE_SCHEMA[node.kind];
   if (!schema) { hideConfig(); return; }
 
@@ -452,7 +478,7 @@ function showConfig(nodeJson) {
       const row = document.createElement('div');
       row.style.cssText = 'font-size:10px;display:flex;justify-content:space-between;margin-bottom:3px';
       const portName = getPortName(schema, k);
-      row.innerHTML = `<span style="color:#8b949e">${portName}</span><span style="color:#c9d1d9;font-weight:600">${fmtVal(v)}</span>`;
+      row.innerHTML = `<span style="color:#8b949e">${escapeHtml(portName)}</span><span style="color:#c9d1d9;font-weight:600">${escapeHtml(fmtVal(v))}</span>`;
       cfgBody.appendChild(row);
     }
     if (node.outputs.steps) {
@@ -490,7 +516,7 @@ function hideConfig() {
 }
 
 function flushConfig() {
-  if (configNodeId === null) return;
+  if (configNodeId == null) return;
   const config = {};
   cfgBody.querySelectorAll('[data-key]').forEach(el => {
     const key = el.dataset.key;
@@ -605,7 +631,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 });
 
 function refreshChart() {
-  if (configNodeId === null) return;
+  if (configNodeId == null) return;
   const panelH = cfgPanel.clientHeight - 40;
   chartCanvas.width  = cfgPanel.clientWidth;
   chartCanvas.height = Math.max(panelH, 200);
@@ -761,9 +787,15 @@ document.getElementById('btn-load').addEventListener('click', () => {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = '.json';
   inp.onchange = async e => {
-    const text = await e.target.files[0].text();
-    if (editor.from_json(text)) { hideConfig(); setStatus('Loaded'); }
-    else setStatus('Load failed — invalid JSON');
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (editor.from_json(text)) { hideConfig(); setStatus('Loaded'); }
+      else setStatus('Load failed — invalid JSON');
+    } catch (err) {
+      setStatus(`Load failed — ${err}`);
+    }
   };
   inp.click();
 });
@@ -865,30 +897,30 @@ function generateReport() {
 
   const now = new Date().toLocaleString();
   const nodeRows = order.map(id => {
-    const node = dag.nodes.find(n => n.id[0] === id);
+    const node = dag.nodes.find(n => normId(n.id) === id);
     if (!node) return '';
     const schema = NODE_SCHEMA[node.kind];
-    const label  = schema?.label ?? node.kind;
-    const userLbl = node.label ? ` — ${node.label}` : '';
+    const label  = escapeHtml(schema?.label ?? node.kind);
+    const userLbl = node.label ? ` — ${escapeHtml(node.label)}` : '';
     const cfg    = node.config || {};
     const outs   = node.outputs || {};
 
     const configRows = Object.entries(cfg).map(([k, v]) => {
       const field = schema?.config_fields?.find(f => f.key === k);
-      const lbl   = field?.label ?? k;
-      const unit  = field?.unit ?? '';
-      return `<tr><td class="k">${lbl}</td><td>${v}${unit ? ' ' + unit : ''}</td></tr>`;
+      const lbl   = escapeHtml(field?.label ?? k);
+      const unit  = escapeHtml(field?.unit ?? '');
+      return `<tr><td class="k">${lbl}</td><td>${escapeHtml(v)}${unit ? ' ' + unit : ''}</td></tr>`;
     }).join('');
 
     const outRows = Object.entries(outs).filter(([k]) => k !== 'steps').map(([k, v]) => {
       const pIdx = parseInt(k);
-      const portName = !isNaN(pIdx) && schema ? `Output ${pIdx + 1}` : k;
-      const val = typeof v === 'object' ? JSON.stringify(v).substring(0, 60) : String(v).substring(0, 60);
+      const portName = escapeHtml(!isNaN(pIdx) && schema ? `Output ${pIdx + 1}` : k);
+      const val = escapeHtml(typeof v === 'object' ? JSON.stringify(v).substring(0, 60) : String(v).substring(0, 60));
       return `<tr class="out"><td class="k">${portName}</td><td><strong>${val}</strong></td></tr>`;
     }).join('');
 
     const stepsHtml = outs.steps
-      ? `<p class="steps">${String(outs.steps).replace(/;/g, ';<br>')}</p>` : '';
+      ? `<p class="steps">${escapeHtml(outs.steps).replace(/;/g, ';<br>')}</p>` : '';
 
     return `<div class="node-block">
       <h3>${label}${userLbl}</h3>
@@ -1177,19 +1209,6 @@ function runStandaloneEngine(dagJson, orderJson) {
           outs['steps'] = `SA=${SA.toFixed(0)} sf (435 sf/cfs), Vol≈${vol.toFixed(0)} cf`;
           break;
         }
-        case 'rusle_erosion': {
-          const R  = cfg(node,'r_factor',180);
-          const K  = cfg(node,'k_factor',0.28);
-          const LS = cfg(node,'ls_factor',1.5);
-          const C  = cfg(node,'c_factor',0.20);
-          const P  = cfg(node,'p_factor',1.0);
-          const area = cfg(node,'area_acres',1);
-          const A  = R*K*LS*C*P;
-          outs['0'] = +A.toFixed(3);
-          outs['total_tons_yr'] = +(A*area).toFixed(2);
-          outs['steps'] = `R=${R}×K=${K}×LS=${LS}×C=${C}×P=${P}=${A.toFixed(2)} t/ac/yr`;
-          break;
-        }
         case 'time_of_concentration':
           outs['0'] = cfg(node,'tc_min',20);
           break;
@@ -1212,17 +1231,6 @@ function runStandaloneEngine(dagJson, orderJson) {
           outs['steps']   = `P=${P}, CN=${CN}, Q=${Q.toFixed(3)} in`;
           break;
         }
-        case 'water_quality_volume': {
-          const area = input(nodeId, 0, cfg(node,'area_acres',5));
-          const I    = cfg(node,'impervious_pct',50)/100;
-          const P    = input(nodeId, 1, cfg(node,'design_storm_in',1));
-          const Rv   = 0.05 + 0.009*I*100;
-          const WQV  = Rv*P*area*43560/12;
-          outs['0']  = +WQV.toFixed(0);
-          outs['rv'] = +Rv.toFixed(3);
-          outs['steps'] = `Rv=${Rv.toFixed(3)}, WQV=${WQV.toFixed(0)} cf`;
-          break;
-        }
         case 'gvf_profile': {
           // Standard Step Method — trapezoidal channel, M1/S1 profiles
           const Q   = input(nodeId, 0, cfg(node,'design_q_cfs',5));
@@ -1236,7 +1244,7 @@ function runStandaloneEngine(dagJson, orderJson) {
           let ylo=0.01, yhi=20;
           for (let i=0;i<40;i++){
             const ym=(ylo+yhi)/2, A=(b+z*ym)*ym, T=b+2*z*ym;
-            if ((Q*Q*T)/(9.81*A*A*A) > 1) ylo=ym; else yhi=ym;
+            if ((Q*Q*T)/(32.2*A*A*A) > 1) ylo=ym; else yhi=ym;
           }
           const yc=(ylo+yhi)/2;
           // Normal depth
@@ -1253,7 +1261,7 @@ function runStandaloneEngine(dagJson, orderJson) {
           for (let i=0;i<10;i++){
             const A=(b+z*y)*y, P=b+2*y*Math.sqrt(1+z*z), R=A/P, V=Q/A;
             const Sf=Math.pow(n*Q/(1.486*A*Math.pow(R,2/3)),2);
-            const dy=dL*(S0-Sf)/(1-V*V/(9.81*(A/(b+2*z*y))));
+            const dy=dL*(S0-Sf)/(1-V*V/(32.2*(A/(b+2*z*y))));
             y=Math.max(yc*0.5, y+dy);
           }
           outs['0'] = +y.toFixed(3);
@@ -1441,8 +1449,8 @@ function exportSvg() {
 
   // Edges first (behind nodes)
   for (const edge of dag.edges) {
-    const fn = dag.nodes.find(n => n.id[0] === edge.from_node[0]);
-    const tn = dag.nodes.find(n => n.id[0] === edge.to_node[0]);
+    const fn = dag.nodes.find(n => normId(n.id) === normId(edge.from_node));
+    const tn = dag.nodes.find(n => normId(n.id) === normId(edge.to_node));
     if (!fn || !tn) continue;
     const x1 = fn.x + NW + ox, y1 = fn.y + NH/2 + oy;
     const x2 = tn.x + ox,      y2 = tn.y + NH/2 + oy;
@@ -1463,8 +1471,8 @@ function exportSvg() {
     // Body
     parts.push(`<rect x="${nx}" y="${ny}" width="${NW}" height="${NH}" rx="8" fill="${bf}" stroke="${bd}" stroke-width="1.5"/>`);
     // Header bg
-    parts.push(`<clipPath id="hc${node.id[0]}"><rect x="${nx}" y="${ny}" width="${NW}" height="${HDRH}" rx="8"/></clipPath>`);
-    parts.push(`<rect x="${nx}" y="${ny}" width="${NW}" height="${HDRH}" fill="${hf}" clip-path="url(#hc${node.id[0]})"/>`);
+    parts.push(`<clipPath id="hc${normId(node.id)}"><rect x="${nx}" y="${ny}" width="${NW}" height="${HDRH}" rx="8"/></clipPath>`);
+    parts.push(`<rect x="${nx}" y="${ny}" width="${NW}" height="${HDRH}" fill="${hf}" clip-path="url(#hc${normId(node.id)})"/>`);
     parts.push(`<rect x="${nx}" y="${ny+HDRH-4}" width="${NW}" height="4" fill="${hf}"/>`);
     // Header text
     parts.push(`<text x="${nx+NW/2}" y="${ny+HDRH/2+1}" text-anchor="middle" font-weight="600" font-size="11" fill="white">${lbl}</text>`);

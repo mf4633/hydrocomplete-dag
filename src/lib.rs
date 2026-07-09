@@ -406,9 +406,16 @@ impl DagEditor {
         let mut id_map: HashMap<u32, dag::NodeId> = HashMap::new();
         let mut new_ids = Vec::new();
 
+        // NodeId is a serde newtype (`struct NodeId(u32)`), so it serializes as a
+        // bare integer here. Fall back to the `{"0": n}` object shape for JSON
+        // produced by the C# host, which serializes the tuple field by name.
+        let read_id = |v: &serde_json::Value| -> u32 {
+            v.as_u64().or_else(|| v["0"].as_u64()).unwrap_or(0) as u32
+        };
+
         if let Some(nodes) = sub["nodes"].as_array() {
             for nv in nodes {
-                let old_id = nv["id"]["0"].as_u64().unwrap_or(0) as u32;
+                let old_id = read_id(&nv["id"]);
                 let kind: NodeKind = serde_json::from_value(nv["kind"].clone())
                     .unwrap_or(NodeKind::Outfall);
                 let x = nv["x"].as_f64().unwrap_or(0.0) + 40.0;
@@ -427,9 +434,9 @@ impl DagEditor {
         }
         if let Some(edges) = sub["edges"].as_array() {
             for ev in edges {
-                let fo = ev["from_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let fo = read_id(&ev["from_node"]);
                 let fp = ev["from_port"].as_u64().unwrap_or(0) as usize;
-                let to = ev["to_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let to = read_id(&ev["to_node"]);
                 let tp = ev["to_port"].as_u64().unwrap_or(0) as usize;
                 if let (Some(&fn_), Some(&tn)) = (id_map.get(&fo), id_map.get(&to)) {
                     self.dag.add_edge(fn_, fp, tn, tp);
