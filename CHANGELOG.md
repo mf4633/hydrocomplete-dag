@@ -30,6 +30,11 @@ replaces the ad-hoc per-node math. All results now respond to their inputs:
 - Added Playwright numeric test vectors covering the corrected physics.
 
 ### Fixed
+- **Node-drag undo was a no-op.** The undo snapshot was cloned in `mouse_up`
+  *after* `mouse_move` had already mutated node positions, so undo restored the
+  post-drag state. The pre-drag snapshot is now captured at drag start and pushed
+  only when a position actually changed — a plain select-click no longer adds a
+  redundant undo entry either.
 - **Config panel targeted the wrong node.** `NodeId` serializes as a bare integer
   (serde newtype), so reading `node.id['0']` in the UI was `undefined` and every
   config edit / chart was applied to node id 0. All id reads now go through a

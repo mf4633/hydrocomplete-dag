@@ -31,6 +31,7 @@ pub struct DagEditor {
     future: Vec<DagModel>,
     clipboard: Option<(String, String)>,  // (kind_json, config_json)
     snap_grid: Option<f64>,               // None = off, Some(g) = snap to g px
+    drag_snapshot: Option<DagModel>,      // pre-drag state, captured at drag start
     camera: Camera,
     interaction: Interaction,
     ctx: CanvasRenderingContext2d,
@@ -61,6 +62,7 @@ impl DagEditor {
             future: Vec::new(),
             clipboard: None,
             snap_grid: None,
+            drag_snapshot: None,
             camera: Camera::new(),
             interaction: Interaction::new(),
             ctx,
@@ -73,6 +75,12 @@ impl DagEditor {
     /// Left-button press.  `button`: 0=left, 1=middle, 2=right.  `shift`: Shift key held.
     pub fn mouse_down(&mut self, sx: f64, sy: f64, button: u16, shift: bool) {
         self.interaction.mouse_down(sx, sy, button, shift, &self.dag, &self.camera);
+        // Node drags mutate positions incrementally during mouse_move, so capture
+        // the pre-drag state now (mouse_up pushes it only if something moved).
+        self.drag_snapshot = match self.interaction.state {
+            InteractionState::DraggingNodes { .. } => Some(self.dag.clone()),
+            _ => None,
+        };
     }
 
     pub fn mouse_move(&mut self, sx: f64, sy: f64) {
@@ -81,10 +89,25 @@ impl DagEditor {
     }
 
     pub fn mouse_up(&mut self, sx: f64, sy: f64) {
-        // push undo before any structural mutation
+        // For a node drag the pre-drag snapshot was captured at mouse_down (the dag
+        // has already been mutated in place); for edge draws / palette drops the
+        // mutation happens inside mouse_up, so a clone now is the correct "before".
+        let drag_before = self.drag_snapshot.take();
         let dag_before = self.dag.clone();
         let mutated = self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
-        if mutated { self.push_undo_snapshot(dag_before); }
+        if mutated {
+            match drag_before {
+                // Node drag: only record undo if a position actually changed
+                // (a plain select-click also passes through DraggingNodes).
+                Some(before) => {
+                    let moved = before.nodes.len() != self.dag.nodes.len()
+                        || before.nodes.iter().zip(self.dag.nodes.iter())
+                            .any(|(a, b)| a.x != b.x || a.y != b.y);
+                    if moved { self.push_undo_snapshot(before); }
+                }
+                None => self.push_undo_snapshot(dag_before),
+            }
+        }
         self.render();
     }
 
