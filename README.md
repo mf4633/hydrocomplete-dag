@@ -79,4 +79,4 @@ standalone engine (`www/index.html`) in sync with `src/nodes.rs`.
 
 ## Support
 
-If HydroComplete's DAG editor is useful to you, please consider [sponsoring the project](https://github.com/sponsors/mf4633). Your support helps keep it maintained.
+If HydroComplete's DAG editor is useful to you, please consider [buying me a coffee](https://buymeacoffee.com/mf4633). Your support helps keep it maintained.
