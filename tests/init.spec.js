@@ -103,6 +103,15 @@ test.describe('DOM — toolbar', () => {
       await expect(page.locator(`#${id}`)).toBeVisible();
     });
   }
+
+  test('#btn-coffee support link is visible and points to a support URL', async ({ page }) => {
+    const link = page.locator('#btn-coffee');
+    await expect(link).toBeVisible();
+    const href = await link.getAttribute('href');
+    expect(href).toMatch(/^https:\/\/(buymeacoffee\.com|buy\.stripe\.com)\//);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /noopener/);
+  });
 });
 
 test.describe('DOM — palette', () => {

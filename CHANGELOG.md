@@ -59,6 +59,9 @@ replaces the ad-hoc per-node math. All results now respond to their inputs:
   vectors delivered via a crafted model file.
 
 ### Added
+- **☕ Support button** in the editor toolbar linking to the project's funding
+  page. The target is a single `SUPPORT_URL` constant — swap it to a Stripe
+  Payment Link (`https://buy.stripe.com/…`) to take contributions directly.
 - Exposed config fields the engine already read but the schema omitted, so user
   inputs stop being silently ignored: Pond Chain `Tc` and `Ponds in series`,
   GVF Profile `Reach length`, Treatment Train `BMP chain`.
