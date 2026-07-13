@@ -115,7 +115,7 @@ fn draw_hydrograph(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     // Peak marker
     if outflow.len() > 1 {
         let (pi, pq) = outflow.iter().enumerate()
-            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap_or((0, &0.0));
+            .max_by(|a, b| a.1.total_cmp(b.1)).unwrap_or((0, &0.0));
         let ppx = mx(pi); let ppy = my(*pq);
         ctx.begin_path();
         let _ = ctx.arc(ppx, ppy, 4.0, 0.0, 2.0 * PI);
@@ -155,7 +155,8 @@ fn draw_monthly_bars(ctx: &Ctx, w: f64, h: f64, outs: &serde_json::Value) {
     let pw = w - pad.l - pad.r;
     let ph = h - pad.t - pad.b;
     let bar_w = (pw / n as f64) * 0.4;
-    let max_r = rain.iter().cloned().fold(0.0_f64, f64::max).max(0.01);
+    // Scale the axis over BOTH series so runoff bars can't overflow the plot.
+    let max_r = rain.iter().chain(runoff.iter()).cloned().fold(0.0_f64, f64::max).max(0.01);
 
     draw_grid(ctx, pad.l, pad.t, pw, ph, 4, 0);
     axis_left(ctx, pad.l, pad.t, ph, 0.0, max_r, 4, "in");

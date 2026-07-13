@@ -1,6 +1,25 @@
 # hydrocomplete-dag
 
+[![CI](https://github.com/mf4633/hydrocomplete-dag/actions/workflows/ci.yml/badge.svg)](https://github.com/mf4633/hydrocomplete-dag/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-wasm32-orange.svg)](https://www.rust-lang.org/)
+
 WASM model builder for HydroComplete — visual hydrology/hydraulics DAG editor used by Civil 3D (`HC_NETWORK_EDIT`) and Open CAD Studio.
+
+Drag hydrology, hydraulics, and water-quality nodes onto a canvas, wire their
+ports into a directed acyclic graph, configure each node, and run the model to
+see results and charts. Export a diagram (SVG) or an analysis report (HTML).
+
+## Features
+
+- **20 node types** across Hydrology, Hydraulics/Routing, Water Quality, and Sink.
+- **Live DAG editing** — drag-to-connect with cycle/duplicate/occupied-port
+  rejection, rubber-band select, multi-select copy/paste, auto-layout,
+  snap-to-grid, minimap, and 50-step undo/redo.
+- **Two run modes** — a built-in standalone JavaScript engine for quick browser
+  use, or the full Civil 3D / Open CAD Studio engine when embedded in a host.
+- **Export** — HTML analysis report and SVG vector diagram; models save/load as
+  JSON and autosave to `localStorage`.
 
 ## Layout
 
@@ -48,6 +67,16 @@ Both suites run in CI (`.github/workflows/ci.yml`) on every push and pull
 request. HydroComplete OCS integration tests live in
 `opencad-hydrocomplete-plugin/tests/frontend/`.
 
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+When adding or changing a node, keep the config keys and output ports in the
+standalone engine (`www/index.html`) in sync with `src/nodes.rs`.
+
+## License
+
+[MIT](LICENSE) © HydroComplete
+
 ## Support
 
-If HydroComplete's DAG editor is useful to you, please consider [sponsoring the project](https://github.com/sponsors/mf4633). Your support helps keep it maintained.
+If HydroComplete's DAG editor is useful to you, please consider [buying me a coffee](https://buymeacoffee.com/mf4633). Your support helps keep it maintained.

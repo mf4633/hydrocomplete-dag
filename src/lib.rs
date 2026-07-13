@@ -31,6 +31,7 @@ pub struct DagEditor {
     future: Vec<DagModel>,
     clipboard: Option<(String, String)>,  // (kind_json, config_json)
     snap_grid: Option<f64>,               // None = off, Some(g) = snap to g px
+    drag_snapshot: Option<DagModel>,      // pre-drag state, captured at drag start
     camera: Camera,
     interaction: Interaction,
     ctx: CanvasRenderingContext2d,
@@ -61,6 +62,7 @@ impl DagEditor {
             future: Vec::new(),
             clipboard: None,
             snap_grid: None,
+            drag_snapshot: None,
             camera: Camera::new(),
             interaction: Interaction::new(),
             ctx,
@@ -73,6 +75,12 @@ impl DagEditor {
     /// Left-button press.  `button`: 0=left, 1=middle, 2=right.  `shift`: Shift key held.
     pub fn mouse_down(&mut self, sx: f64, sy: f64, button: u16, shift: bool) {
         self.interaction.mouse_down(sx, sy, button, shift, &self.dag, &self.camera);
+        // Node drags mutate positions incrementally during mouse_move, so capture
+        // the pre-drag state now (mouse_up pushes it only if something moved).
+        self.drag_snapshot = match self.interaction.state {
+            InteractionState::DraggingNodes { .. } => Some(self.dag.clone()),
+            _ => None,
+        };
     }
 
     pub fn mouse_move(&mut self, sx: f64, sy: f64) {
@@ -81,10 +89,25 @@ impl DagEditor {
     }
 
     pub fn mouse_up(&mut self, sx: f64, sy: f64) {
-        // push undo before any structural mutation
+        // For a node drag the pre-drag snapshot was captured at mouse_down (the dag
+        // has already been mutated in place); for edge draws / palette drops the
+        // mutation happens inside mouse_up, so a clone now is the correct "before".
+        let drag_before = self.drag_snapshot.take();
         let dag_before = self.dag.clone();
         let mutated = self.interaction.mouse_up(sx, sy, &mut self.dag, &self.camera);
-        if mutated { self.push_undo_snapshot(dag_before); }
+        if mutated {
+            match drag_before {
+                // Node drag: only record undo if a position actually changed
+                // (a plain select-click also passes through DraggingNodes).
+                Some(before) => {
+                    let moved = before.nodes.len() != self.dag.nodes.len()
+                        || before.nodes.iter().zip(self.dag.nodes.iter())
+                            .any(|(a, b)| a.x != b.x || a.y != b.y);
+                    if moved { self.push_undo_snapshot(before); }
+                }
+                None => self.push_undo_snapshot(dag_before),
+            }
+        }
         self.render();
     }
 
@@ -406,9 +429,16 @@ impl DagEditor {
         let mut id_map: HashMap<u32, dag::NodeId> = HashMap::new();
         let mut new_ids = Vec::new();
 
+        // NodeId is a serde newtype (`struct NodeId(u32)`), so it serializes as a
+        // bare integer here. Fall back to the `{"0": n}` object shape for JSON
+        // produced by the C# host, which serializes the tuple field by name.
+        let read_id = |v: &serde_json::Value| -> u32 {
+            v.as_u64().or_else(|| v["0"].as_u64()).unwrap_or(0) as u32
+        };
+
         if let Some(nodes) = sub["nodes"].as_array() {
             for nv in nodes {
-                let old_id = nv["id"]["0"].as_u64().unwrap_or(0) as u32;
+                let old_id = read_id(&nv["id"]);
                 let kind: NodeKind = serde_json::from_value(nv["kind"].clone())
                     .unwrap_or(NodeKind::Outfall);
                 let x = nv["x"].as_f64().unwrap_or(0.0) + 40.0;
@@ -427,9 +457,9 @@ impl DagEditor {
         }
         if let Some(edges) = sub["edges"].as_array() {
             for ev in edges {
-                let fo = ev["from_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let fo = read_id(&ev["from_node"]);
                 let fp = ev["from_port"].as_u64().unwrap_or(0) as usize;
-                let to = ev["to_node"]["0"].as_u64().unwrap_or(0) as u32;
+                let to = read_id(&ev["to_node"]);
                 let tp = ev["to_port"].as_u64().unwrap_or(0) as usize;
                 if let (Some(&fn_), Some(&tn)) = (id_map.get(&fo), id_map.get(&to)) {
                     self.dag.add_edge(fn_, fp, tn, tp);

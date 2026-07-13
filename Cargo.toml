@@ -2,6 +2,13 @@
 name = "hydrocomplete-dag"
 version = "0.1.0"
 edition = "2021"
+description = "WASM model builder for HydroComplete — a visual hydrology/hydraulics DAG editor for stormwater analysis."
+license = "MIT"
+repository = "https://github.com/mf4633/hydrocomplete-dag"
+homepage = "https://hydrocomplete.com"
+keywords = ["wasm", "hydrology", "hydraulics", "stormwater", "civil-engineering"]
+categories = ["wasm", "science", "visualization"]
+readme = "README.md"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

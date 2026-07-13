@@ -444,3 +444,54 @@ test.describe('Zoom', () => {
   });
 });
 
+
+test.describe('Node-drag undo', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await waitForEditor(page);
+  });
+
+  test('dragging a node can be undone to its original position', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const ed = window.__editor;
+      ed.clear();
+      ed.palette_drag_start('catchment');
+      ed.palette_drop(200, 200);
+      ed.zoom_fit();
+      const id = ed.selected_node_id();
+      const a = JSON.parse(ed.node_screen_rect(id));
+      const cx = a.x + a.w / 2, cy = a.y + a.h / 2;
+      ed.mouse_down(cx, cy, 0, false);
+      ed.mouse_move(cx + 120, cy + 90);
+      ed.mouse_up(cx + 120, cy + 90);
+      const b = JSON.parse(ed.node_screen_rect(id));
+      ed.undo();
+      const c = JSON.parse(ed.node_screen_rect(id));
+      return { ax: a.x, ay: a.y, bx: b.x, by: b.y, cx2: c.x, cy2: c.y };
+    });
+    expect(Math.abs(r.bx - r.ax)).toBeGreaterThan(50);   // it actually moved
+    expect(Math.abs(r.cx2 - r.ax)).toBeLessThan(2);      // undo restored X
+    expect(Math.abs(r.cy2 - r.ay)).toBeLessThan(2);      // undo restored Y
+  });
+
+  test('a plain node click adds no undo entry', async ({ page }) => {
+    const r = await page.evaluate(() => {
+      const ed = window.__editor;
+      ed.clear();
+      ed.palette_drag_start('catchment');
+      ed.palette_drop(200, 200);              // the only real undo entry (add)
+      ed.zoom_fit();
+      const id = ed.selected_node_id();
+      const a = JSON.parse(ed.node_screen_rect(id));
+      const cx = a.x + a.w / 2, cy = a.y + a.h / 2;
+      ed.mouse_down(cx, cy, 0, false);        // click, no movement
+      ed.mouse_up(cx, cy);
+      const afterClick = ed.node_count();
+      ed.undo();                              // should undo the ADD, not a phantom
+      return { afterClick, afterUndo: ed.node_count(), canUndo: ed.can_undo() };
+    });
+    expect(r.afterClick).toBe(1);
+    expect(r.afterUndo).toBe(0);              // one undo removed the node
+    expect(r.canUndo).toBe(false);            // no phantom click entry remains
+  });
+});
