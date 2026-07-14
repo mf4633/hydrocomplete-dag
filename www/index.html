@@ -375,9 +375,10 @@ window.__editor = editor;
 window.__DagEditor = DagEditor;
 
 // ── Support / "buy me a coffee" link ────────────────────────────────────────
-// Swap this to a native Stripe Payment Link (https://buy.stripe.com/…) to take
-// contributions directly through Stripe instead of Buy Me a Coffee.
-const SUPPORT_URL = 'https://buymeacoffee.com/mf4633';
+// Native Stripe Payment Link (contributions go straight to Stripe). To change
+// the amount/description, edit the link in the Stripe Dashboard, or replace the
+// URL below.
+const SUPPORT_URL = 'https://buy.stripe.com/14A3cudxo91z1qo0OHdAk00';
 const coffeeBtn = document.getElementById('btn-coffee');
 if (coffeeBtn) coffeeBtn.href = SUPPORT_URL;
 
