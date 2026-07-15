@@ -28,6 +28,9 @@ html, body { height: 100%; background: #0d1117; font-family: 'Segoe UI', Arial, 
 .tbtn.run { background: #238636; border-color: #238636; color: #fff; font-size: 12px; }
 .tbtn.run:hover { background: #2ea043; }
 .tbtn.danger { background: #da3633; border-color: #da3633; color: #fff; }
+.tbtn.coffee { background: #f9b23a; border-color: #f9b23a; color: #3a2a00;
+  text-decoration: none; display: inline-flex; align-items: center; }
+.tbtn.coffee:hover { background: #ffc14d; }
 .sep { width: 1px; height: 20px; background: #30363d; }
 #status { font-size: 10px; color: #8b949e; margin-left: auto; white-space: nowrap; }
 
@@ -224,6 +227,8 @@ html, body { height: 100%; background: #0d1117; font-family: 'Segoe UI', Arial, 
     <select id="tmpl-select" style="font-size:11px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:3px 6px;cursor:pointer">
       <option value="">Templates…</option>
     </select>
+    <a class="tbtn coffee" id="btn-coffee" href="#" target="_blank" rel="noopener noreferrer"
+       title="Support this project">☕ Support</a>
     <div class="sep"></div>
     <span id="status">Ready</span>
   </div>
@@ -368,6 +373,14 @@ const editor = new DagEditor('dag-canvas');
 // Expose for E2E tests and DevTools
 window.__editor = editor;
 window.__DagEditor = DagEditor;
+
+// ── Support / "buy me a coffee" link ────────────────────────────────────────
+// Native Stripe Payment Link (contributions go straight to Stripe). To change
+// the amount/description, edit the link in the Stripe Dashboard, or replace the
+// URL below.
+const SUPPORT_URL = 'https://buy.stripe.com/14A3cudxo91z1qo0OHdAk00';
+const coffeeBtn = document.getElementById('btn-coffee');
+if (coffeeBtn) coffeeBtn.href = SUPPORT_URL;
 
 function resizeCanvas() {
   canvas.width  = wrap.clientWidth;
